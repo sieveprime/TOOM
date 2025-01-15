@@ -171,55 +171,55 @@ U0 Finale(CDC *dc,I64 ep) {
   F64 start_tS;
   F64 wait_start_tS=0;
   FlushMsgs;
-#ifdef DOOM2
-  switch(ep) {
-    case 6:
-      str=C1TEXT;
-      flat=GetFlatDC("SLIME16");
-      break;
-    case 11:
-      str=C2TEXT;
-      flat=GetFlatDC("RROCK14");
-      break;
-    case 20:
-      str=C3TEXT;
-      flat=GetFlatDC("RROCK07");
-      break;
-    case 30:
-      str=C4TEXT;
-      flat=GetFlatDC("RROCK17");
-      break;
-    case 15:
-      str=C5TEXT;
-      flat=GetFlatDC("RROCK13");
-      break;
-    case 31:
-      str=C6TEXT;
-      flat=GetFlatDC("RROCK19");
-      break;
+  if(FramePtr("DOOM2")) {
+    switch(ep) {
+      case 6:
+        str=C1TEXT;
+        flat=GetFlatDC("SLIME16");
+        break;
+      case 11:
+        str=C2TEXT;
+        flat=GetFlatDC("RROCK14");
+        break;
+      case 20:
+        str=C3TEXT;
+        flat=GetFlatDC("RROCK07");
+        break;
+      case 30:
+        str=C4TEXT;
+        flat=GetFlatDC("RROCK17");
+        break;
+      case 15:
+        str=C5TEXT;
+        flat=GetFlatDC("RROCK13");
+        break;
+      case 31:
+        str=C6TEXT;
+        flat=GetFlatDC("RROCK19");
+        break;
+    }
+    if(!str) return;
+  } else {
+    switch(ep) {
+      case 1:
+        str=E1TEXT;
+        flat=GetFlatDC("FLOOR4_8");
+        break;
+      case 2:
+        str=E2TEXT;
+        flat=GetFlatDC("SFLR6_1");
+        break;
+      case 3:
+        BunnyScroll(dc);
+        str=E3TEXT;
+        flat=GetFlatDC("MFLR8_4");
+        break;
+      case 4:
+        str=E4TEXT;
+        flat=GetFlatDC("MFLR8_3");
+        break;
+    }
   }
-  if(!str) return;
-#else
-  switch(ep) {
-    case 1:
-      str=E1TEXT;
-      flat=GetFlatDC("FLOOR4_8");
-      break;
-    case 2:
-      str=E2TEXT;
-      flat=GetFlatDC("SFLR6_1");
-      break;
-    case 3:
-      BunnyScroll(dc);
-      str=E3TEXT;
-      flat=GetFlatDC("MFLR8_4");
-      break;
-    case 4:
-      str=E4TEXT;
-      flat=GetFlatDC("MFLR8_3");
-      break;
-  }
-#endif
   start_tS=Server_tS;
   MemSet(buf,0,TEXT_COLS*TEXT_ROWS+1);
   cnt=StrLen(str);
@@ -229,21 +229,21 @@ U0 Finale(CDC *dc,I64 ep) {
     if(ch+coff>cnt) {
       ch=cnt;
       if(!wait_start_tS)
-	wait_start_tS=Server_tS;
+        wait_start_tS=Server_tS;
       if(Server_tS-wait_start_tS>TEXT_WAIT)
-	break;
+        break;
     }
     if(!paused&&ScanKey(&ascii)) {
       if(ascii==CH_ESC)
-	paused=TRUE;
-      //Refresh to regen keys
-#ifdef DOOM2
+        paused=TRUE;
+//Refresh to regen keys
+      if(FramePtr("DOOM2")) {
 //Just quit to net level
-      if(ascii=='\n')
-	break;
-      if(ascii==' ')
-	break;
-#endif
+        if(ascii=='\n')
+	  break;
+        if(ascii==' ')
+	  break;
+      }
       Refresh;
     }
     for(i=0;i<GR_WIDTH/2;i++) {

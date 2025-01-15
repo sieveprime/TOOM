@@ -2,6 +2,8 @@
 #define DOOM_WAD" Whats Poppin"
 #define DEBUG 1
 #include "Set.HC";
+extern Bool IsNetworkGameServer();
+extern Bool IsNetworkGameClient();
 U32 class CRGB {
   U8 r,g,b,a;
 };
@@ -26,6 +28,12 @@ I64 wad_sizes[0x100];
 
 CWad *wad;
 CWad *LoadWad(U8 *filename) {
+  CDirEntry *de=FilesFind(filename);
+  if(de) {
+//See MPServerBrowser
+    FramePtrAdd("USE_WAD",StrNew(de->name));
+    DirEntryDel(de);
+  }
   wads[wad_cnt]=FileRead(filename,&wad_sizes[wad_cnt]);
   if(!wad_cnt) wad=wads[wad_cnt];
   wad_cnt++;
@@ -828,9 +836,8 @@ try_text:
   LoadGrLump(NULL,"PUNGD0");
 
 //
-#ifdef DOOM2
-  LoadGrLump(NULL,"HELP1");
-#endif
+  if(FramePtr("DOOM2"))
+    LoadGrLump(NULL,"HELP1");
 
   //PISTOL
   for(idx='A';idx<='E';idx++) {
@@ -960,7 +967,7 @@ found:
 //If no flags are set for the spawns,stil handle them
     if(wthing->thing_type==1)
       goto pass_thing;
-    if(wthing->flags&WAD_THINGF_MULTIPLAYER)
+    if(wthing->flags&WAD_THINGF_MULTIPLAYER&&!IsNetworkGameServer)
       goto skip_thing;
     switch(skill) {
       case 0:
@@ -975,6 +982,7 @@ found:
         break;
       case 4:
       case 5:
+      case 6:
         if(wthing->flags&WAD_THINGF_SKILL45)
 	  goto pass_thing;
         break;
@@ -992,8 +1000,6 @@ pass_thing:
     if(dthing->template->flags&TF_MONSTER)
       level->stats.max_kills++;
     dthing->flags=dthing->template->flags;
-PrintI("dthing",dthing);
-PrintI("tt",wthing->thing_type);
     QueIns(dthing,level->things.last);
 skip_thing:
     wthing++;

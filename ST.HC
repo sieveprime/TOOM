@@ -55,11 +55,7 @@ Bool AddWeaponIndex(Bool pos)
   I64 idx;
   if(pos)
     {
-#ifdef DOOM2
-    for(idx=weaponIndex+1;idx!=9;idx++)
-#else
-    for(idx=weaponIndex+1;idx!=8;idx++)
-#endif
+    for(idx=weaponIndex+1;idx!=8+FramePtr("DOOM2");idx++)
       if(p->arsenal[idx].available)
         {
         weaponIndex=idx;
@@ -254,11 +250,7 @@ U0 DrawNumber(CDoomPlayer *p, U32 x, U32 y, U16 weapon,Bool large,Bool percent=F
 //bullets
 
   U64 ammoNum;
-#ifdef DOOM2
-  if(weapon>=9)
-#else
-  if(weapon>=8)
-#endif
+  if(weapon>=8+FramePtr("DOOM2"))
     {
     switch(weapon)
       {

@@ -1,28 +1,7 @@
 #ifndef FUN_WITH_FRIENDS
 #define FUN_WITH_FRIENDS "poop"
-#exe { // useful for dynamic includes, eg CrossNetShims
-  Bool a,e;
-  Bool _FindDef(U8 *nam,U8 *fmt,...) {
-    Bool ret;
-    U8 *s=StrPrintJoin(NULL,fmt,argc,argv);
-    if (ret=!!HashFind(nam,Fs->hash_table,HTT_DEFINE_STR))
-      StreamPrint("%s;;\n",s);
-    Free(s);
-    return ret;
-  }
-  a=_FindDef("__AIWNIOS__","\"Running on Aiwnios\\n\";\n");
-  e=_FindDef("__EXODUS","\"Running on Exodus\\n\";\n");
-  if (!a && !e) {
-    StreamPrint("\"Possibly stock TempleOS\\n\";\n");
-    StreamPrint("#include \"CrossNetShims/Generic.HC\";;\n");
-  } else if(a) {
-    StreamPrint("#include \"CrossNetShims/Aiwnios2.HC\";;\n");
-  } else if(e) {
-    StreamPrint("#include \"CrossNetShims/EXODUS.HC\";;\n");
-  }
-};;
-#exe {Cd(__DIR__);};
-#include "Set.HC"
+#include "SlimProx";
+
 #define TOOM_PORT 6666 //FreeBSD doesnt like low ports
 class CServerSidedef {
   I64 idx;
@@ -93,6 +72,8 @@ U16 MPHashThing(CDoomThing *t) {
     hash^=HashStr(tmp);
   return (hash&0xffff)|1;
 }
+//This message is for pushing the player when an enemy damages the player
+#define MSG_DAMAGE_PUSH 'DmgPush'
 #define MSG_HASH_THINGS 'HashTngs'
 #define MSG_WANT_HASH_THINGS 'WantTHsh'
 #define MSG_WANT_THINGS 'WantTngs'
@@ -258,22 +239,31 @@ class CWallPress {
   I16 x,y,height;
 };
 
+//MSG_DAMAGE_PUSH
+class CPlayerPush {
+  U64 ident;
+  I64 sz;
+  U0 body;
+  F64 angle;
+  F64 force;
+};
+
 extern U0 MPClientSync(CMPConnect *con,CDoomLevel *l);
 
 U0 SendMessage(CMPConnect *con,CGenericHeader *msg) {
   CArcCompress *buf=CompressBuf(msg,msg->sz);
-  send(con->sock,buf,buf->compressed_size,0);
+  SlimProxSend(con->sock,buf,buf->compressed_size,0);
   Free(buf);
 }
 CGenericHeader *GetMessage(CMPConnect *con) {
   CArcCompress head,*b1;
   CGenericHeader *b2;
-  if(-1==recv(con->sock,&head,sizeof (CArcCompress),0)) {
+  if(-1==SlimProxReceive(con->sock,&head,sizeof (CArcCompress),0)) {
      return NULL;
   }
   b1=CAlloc(head.compressed_size+sizeof(CArcCompress));
   MemCpy(b1,&head,sizeof CArcCompress);
-  if(-1==recv(con->sock,b1+1,head.compressed_size-sizeof(CArcCompress),0)) {
+  if(-1==SlimProxReceive(con->sock,b1+1,head.compressed_size-sizeof(CArcCompress),0)) {
     Free(b1);
     return NULL;
   }
@@ -482,7 +472,7 @@ U0 CompareThingHashes(CMPConnect *con,CDoomLevel *l,CHashesHeader *hd) {
   for(idx=0;idx!=hd->sz/2;idx++) {
     I64SetAdd(want,hd->body[idx]);
   }
-/*  for(idx=0;idx!=me_cnt;idx++) {
+  for(idx=0;idx!=me_cnt;idx++) {
     h=MPHashThing(t);
     t->hash=h;
     t=t->next;    
@@ -499,12 +489,12 @@ U0 CompareThingHashes(CMPConnect *con,CDoomLevel *l,CHashesHeader *hd) {
     h=you_hashes[idx];
     if(I64SetHas(want,h)&&!I64SetHas(collisions,h))
       I64SetAdd(to_keep,h);
-  }*/
+  }
   con->remove_on_receive->cnt=0;
   t=l->things.next;
   for(idx=0;idx!=me_cnt;idx++) {
     t2=t->next;
-    if(!I64SetHas(to_keep,MPHashThing(t))) {
+    if(!I64SetHas(to_keep,t->hash)) {
       I64SetAdd(con->remove_on_receive,t);
     }
     t=t2;
@@ -526,13 +516,13 @@ U0 RecieveThings(CMPConnect *con,CDoomLevel *l,CThingsHeader *got) {
   I64 idx;  
   CDoomThing *dt,*next;
   CServerThing *st=got->body;
-//  for(idx=0;idx!=con->remove_on_receive->cnt;idx++)  {
   for(dt=l->things.next;dt!=&l->things;dt=next) {
     next=dt->next;
-    if(dt!=p) {
+    if(dt!=p&&I64SetHas(con->remove_on_receive,dt)) {
       if(dt->thinker) {
         QueRem(dt->thinker);
         Free(dt->thinker);
+	dt->thinker=NULL;
       }
       ThingDel(l,dt);
     }
@@ -598,12 +588,31 @@ U0 SendThings(CMPConnect *con,CDoomLevel *l,CHashesHeader *msg) {
   I64SetDel(want);
 }
 
+U0 ServerSendPlayerDamagePush(CDoomPlayer *player,F64 angle,F64 force) {
+  if(!IsNetworkGameServer)
+    return;
+  CMPConnect *head=FramePtr("Srv.Connects"),*cur;
+  CPlayerPush pp;
+  for(cur=head->next;cur!=head;cur=cur->next) {
+    if(cur->player==player) {
+      pp.ident=MSG_DAMAGE_PUSH;
+      pp.sz=sizeof(CPlayerPush);
+      pp.angle=angle;
+      pp.force=force;
+      SendMessage(cur,&pp);
+      return;
+    }
+  }
+}
+
 U0 SendPlayerSpawnMissile(CMPConnect *con,CDoomPlayer *p,CD2 *to,CDoomThing *target,U64 type) {
   CMissileSend mss;
   mss.ident=MSG_PLAYER_MISSILE;
   mss.sz=sizeof(CMissileSend);
   mss.sx=p->x;
   mss.sy=p->y;
+  if(target)
+    to=&target->x;
   mss.ex=to->x;
   mss.ey=to->y;
   mss.type=type;
@@ -633,7 +642,7 @@ U0 SendPlayerUpdateServer(CMPConnect *con,CDoomPlayer *p) {
   CThingsHeader *hdr=CAlloc(sizeof(CThingsHeader)+sizeof(CServerPlayer));
   CServerPlayer *sp;
   CSTMessageHeader st_msg;
-  I64 idx;
+  I64 idx,more;
   hdr->sz=sizeof(CThingsHeader)+sizeof(CServerPlayer);
   hdr->ident=MSG_SEND_PLAYER;
   sp=&hdr->body;
@@ -651,18 +660,16 @@ U0 SendPlayerUpdateServer(CMPConnect *con,CDoomPlayer *p) {
   sp->has_red_key=l->has_red_key;
   sp->has_blue_key=l->has_blue_key;
   sp->has_yellow_key=l->has_yellow_key;
-#ifdef DOOM2
-  for(idx=0;idx!=9;idx++) {
-#else
-  for(idx=0;idx!=8;idx++) {
-#endif
+//Maybe an enemy in the server attacks the player
+//Server handles health
+//Clients handle ammo,server only adds ammo to players
+  for(idx=0;idx!=8+FramePtr("DOOM2");idx++) {
     sp->has_weapons[idx]=p->arsenal[idx].available;
-//These are aliased (3->1 and 7->6)
-    if(idx!=3&&idx!=7&&idx!=8) {
-      sp->additional_weapon_ammo[idx]+=p->arsenal[idx].load->ammo;
-      p->arsenal[idx].load->ammo=0;
-    }
+    more=p->arsenal[idx].load->ammo2;
+    sp->additional_weapon_ammo[idx]=more;
+    p->arsenal[idx].load->ammo2=0;
   }
+
   SendMessage(con,hdr);
   if(p->message[0]) {
     st_msg.ident=MSG_ST_MESSAGE;
@@ -688,16 +695,6 @@ U0 SendPlayerUpdateClient(CMPConnect *con,CDoomPlayer *p) {
   sp->max_rockets=maxRockets;
   sp->max_shells=maxShells;
   sp->max_cells=maxCells;
-#ifdef DOOM2
-  for(idx=0;idx!=9;idx++) {
-#else
-  for(idx=0;idx!=8;idx++) {
-#endif
-    sp->has_weapons[idx]=p->arsenal[idx].available;
-//These are aliased (3->1 and 7->6)
-    if(idx!=3&&idx!=7&&idx!=8)
-      sp->has_weapon_ammo[idx]=p->arsenal[idx].load->ammo;
-  }
   sp->angle=Wrap(p->angle)/pi*I16_MAX;
   SendMessage(con,hdr);
   Free(hdr);
@@ -706,7 +703,7 @@ U0 ReadPlayerUpdateClient(CMPConnect *con,CThingsHeader *hh) {
   CDoomPlayer *p=con->player;
   if(!p) return;
   CServerPlayer *thg=hh->body;
-  I64 idx;
+  I64 idx,more;
 //Cleint's handle the position
 /*  p->x=thg.x;
   p->y=thg.y;
@@ -715,17 +712,6 @@ U0 ReadPlayerUpdateClient(CMPConnect *con,CThingsHeader *hh) {
 
 //Maybe an enemy in the server attacks the player
   p->health=thg->health;
-#ifdef DOOM2
-  for(idx=0;idx!=9;idx++) {
-#else
-  for(idx=0;idx!=8;idx++) {
-#endif
-    p->arsenal[idx].available=thg->has_weapons[idx];
-//These are aliased (3->1 and 7->6)
-    if(idx!=3&&idx!=7&&idx!=8) {
-      p->arsenal[idx].load->ammo+=thg->additional_weapon_ammo[idx];
-    }
-  }
   l->has_red_key=thg->has_red_key;
   l->has_blue_key=thg->has_blue_key;
   l->has_yellow_key=thg->has_yellow_key;
@@ -735,6 +721,15 @@ U0 ReadPlayerUpdateClient(CMPConnect *con,CThingsHeader *hh) {
   p->invincible_time=thg->invincible_time;
   p->invisible_time=thg->invisible_time;
   p->armor=thg->armor;
+  for(idx=0;idx!=8+FramePtr("DOOM2`");idx++) {
+    p->arsenal[idx].available=thg->has_weapons[idx];
+//These are aliased (3->1 and 7->6)
+    if(idx!=3&&idx!=7&&idx!=8) {
+	more=thg->additional_weapon_ammo[idx];
+      p->arsenal[idx].load->ammo+=more;
+    }
+  }
+
 }
 
 U0 SendPickup(CMPConnect *con,CDoomThing *thing) {
@@ -750,7 +745,7 @@ U0 ReadPlayerUpdateServer(CMPConnect *con,CThingsHeader *hh) {
   CDoomPlayer *p=con->player;
   if(!p) return;
   CServerPlayer *thg=hh->body;
-  I64 idx;
+  I64 idx,more;
 //Cleint's handle the position
   DbgPrint("Server gxt player(%d,%d)\n",thg->x,thg->y); 
   RemovePosDataForThing(l,p);
@@ -759,21 +754,6 @@ U0 ReadPlayerUpdateServer(CMPConnect *con,CThingsHeader *hh) {
   p->height=thg->h;  
   p->angle=thg->angle/ToF64(I16_MAX)*pi;
   InitPosDataForThing(l,p);
-
-//Maybe an enemy in the server attacks the player
-//Server handles health
-//Clients handle ammo,server only adds ammo to players
-#ifdef DOOM2
-  for(idx=0;idx!=9;idx++) {
-#else
-  for(idx=0;idx!=8;idx++) {
-#endif
-    p->arsenal[idx].available=thg->has_weapons[idx];
-//These are aliased (3->1 and 7->6)
-    if(idx!=3&&idx!=7&&idx!=8) {
-      p->arsenal[idx].load->ammo2=thg->has_weapon_ammo[idx];
-    }
-  }
 }
 
 
@@ -785,17 +765,16 @@ U0 MPClientSync(CMPConnect *con,CDoomLevel *l) {
   con->flags|=CONNECTF_WANTS_THINGS;
   SendMessage(con,&want);
   SendPlayerUpdateClient(con,con->player);
-
 }
 U0 ServerExit() {
   CMPConnect *head=FramePtr("Srv.Connects"),*cur,*next;
   for(cur=head->next;cur!=head;cur=next) {
     next=cur->next;
-    close(cur->sock);
+    SlimProxClose(cur->sock);
     Free(cur);
   }
   Free(head);
-  close(FramePtr("Srv.Socket"));
+  SlimProxClose(FramePtr("Srv.Socket"));
   Exit;
 }
 CMPConnect *MPCloseConnect(CMPConnect *con) {
@@ -810,7 +789,7 @@ CMPConnect *MPCloseConnect(CMPConnect *con) {
   }
   Free(con->sidedefs);
   Free(con->sectors);
-  close(con->sock);
+  SlimProxClose(con->sock);
   QueRem(con);
   Free(con);
   return next;
@@ -849,6 +828,8 @@ wtf:
       }
     } else if(msg->ident==MSG_PLAYER_ATTACK) {
       CPlayerAttack *patk=msg;
+      if(!connection->player)
+	goto after_player_attack;
       connection->player->made_a_sound=TRUE;
       DbgPrint("Player begins attack\n");
 //Help with autoaim(fallback_angle)
@@ -866,7 +847,7 @@ after_player_attack:;
       connection->player->made_a_sound=TRUE;
       DbgPrint("Player spawns missile(type %c)\n",missile_send->type);
       for(dthing=l->things.next;dthing!=&l->things;dthing=dthing->next) {
-        if(patk->target_hash==MPHashThing(dthing)) {
+        if(missile_send->target_hash==MPHashThing(dthing)) {
 	  DbgPrint("Player finds target to fire missile at\n");
 	  SpawnMissile(l,connection->player,dthing,missile_send->type);
 	  goto after_missile_attack;
@@ -943,7 +924,7 @@ U0 ServerAcceptTask(I64) {
   Bool avail[4];
   CDoomPlayer *p;
   CMPConnect *connects=FramePtr("Srv.Connects"),*new,*next_con;
-  while(who=accept(listen_sock,NULL,0)) {
+  while(who=SlimProxAccept(listen_sock,NULL,0)) {
     if(who!=-1)  {
 DbgPrint("nw client:\n");
       new=connects->next;
@@ -964,7 +945,7 @@ DbgPrint("nw client:\n");
       }
 //TODO game full Or some shit
 DbgPrint("game full\n");
-      close(who);
+      SlimProxClose(who);
     } else {
      Sleep(1);
     }
@@ -999,7 +980,7 @@ U0 ServerUpdate(I64) {
 //This function is re-callable(Call again for level transition).
 U0 ServerBegin(U16 port=TOOM_PORT) {
   if(FramePtr("Srv.Connects")) return ;
-  I64 listen_sock=create_server("0.0.0.0",port,4);
+  I64 listen_sock=SlimProxCreateServer("0.0.0.0",port,4);
   CMPConnect *connects=CAlloc(sizeof CQue);
   QueInit(connects);
   FramePtrAdd("Srv.Connects",connects);
@@ -1014,7 +995,7 @@ Bool IsNetworkGameClient() {
 }
 
 Bool IsNetworkGameServer() {
-  if(FramePtr("Srv.Connects"))
+  if(FramePtr("Srv.Active"))
     return TRUE;
   return FALSE;
 }
@@ -1022,7 +1003,7 @@ Bool IsNetworkGameServer() {
 U0 ClientDisconnect() {
   CMPConnect *c=FramePtr("Client.Connect");
   Free(c);
-  close(FramePtr("Client.Sock"));
+  SlimProxClose(FramePtr("Client.Sock"));
 }
 U0 ClientReadTask(I64) {
   I64 listen_sock=FramePtr("Client.Sock");
@@ -1033,11 +1014,17 @@ U0 ClientReadTask(I64) {
   CServerSector *srv_sec;
   CDoomSidedef *sd;
   CDoomSector *sec;
+  CDoomPlayer *player;
   CSTMessageHeader *st_msg;
   MPClientSync(connect,l); //Initial placement of thigns
   while(msg=GetMessage(connect)) {
     WorldLock;
-    if(msg->ident==MSG_ST_MESSAGE) {
+    if(msg->ident==MSG_DAMAGE_PUSH) {
+      if(player=connect->player) {
+	player->momx+=msg(CPlayerPush*)->force*Cos(msg(CPlayerPush*)->angle);
+	player->momy+=msg(CPlayerPush*)->force*Sin(msg(CPlayerPush*)->angle);
+      }
+    } else if(msg->ident==MSG_ST_MESSAGE) {
       st_msg=msg;
       ST_Message(connect->player,st_msg->msg);
     } else if(msg->ident==MSG_SEND_PLAYER) {
@@ -1128,7 +1115,7 @@ Bool ClientUpdateTask(CMPConnect *c) {
 //
 //This is a "reusable" function,feel free to call it again(on level transition)
 //
-Bool ClientBegin(U8 *who) {
+Bool ClientBegin(U8 *who,I64 port=TOOM_PORT) {
   Bool success=TRUE;
   CMPConnect *connect=FramePtr("Client.Connect");
   CDoomLevel *oldl=l;
@@ -1136,7 +1123,7 @@ Bool ClientBegin(U8 *who) {
     goto start_game;
   } 
   I64 listen_sock;
-  listen_sock=create_connection(who,TOOM_PORT);
+  listen_sock=SlimProxCreateConnection(who,port);
   if(listen_sock<0) return FALSE;
   CWhatLevelHeader what_lvl,*msg;
   connect=CAlloc(sizeof(CMPConnect));
@@ -1183,7 +1170,7 @@ start_game:;
 	  break;
 	} else {
 //TODO inform client something bad happended
-	  close(connect->sock);
+	  SlimProxClose(connect->sock);
           Free(connect);
 	  success=FALSE;
 	  break;
@@ -1257,7 +1244,10 @@ U0 ClientPlayerSpawnMissile(CDoomLevel *l,CDoomPlayer *p,CDoomThing *target,U64 
     SpawnMissile(l,p,target,type);
     return;
   }
-  SendPlayerSpawnMissile(FramePtr("Client.Connect"),l,p,target,type);
+  CD2 towards;
+  towards.x=Cos(p->angle)*100+p->x;
+  towards.y=Sin(p->angle)*100+p->y;
+  SendPlayerSpawnMissile(FramePtr("Client.Connect"),p,&towards,target,type);
 }
 U0 ClientPressAWall(CDoomLevel *l,CDoomPlayer *p) {
   CWallPress press;  
@@ -1293,6 +1283,7 @@ U0 ServeGame(U8 *map_name,I64 skill) {
   U8 *next_map,restart,dummy[16];
   CMPConnect *mp_con,*head;
   CEndLevelHeader end_hdr;
+  FramePtrAdd("Srv.Active",1);
   l=LoadWadLevel(map_name,skill);
 again:; 
   for(t=l->things.next;t!=&l->things;t=next) {
@@ -1318,7 +1309,6 @@ again:;
   "Press A Key to stop serving\n";
   FlushMsgs;
   restart=FALSE;
-PrintI("mpa_name",1);
   while(!l->ended) { //TODO check if won game and all clients disonnected
     if(ScanKey) 
       break;
@@ -1331,7 +1321,7 @@ PrintI("mpa_name",1);
       next_map=dummy;
       goto next_level;
     }
-    Sleep(33);
+    Sleep(10);
   }
   next_map=NextLevel(l->map_name,l->ended_special);
 next_level:;
@@ -1345,11 +1335,13 @@ next_level:;
     mp_con->sectors=NULL;
     mp_con->sidedefs=NULL;
     mp_con->flags=0;
-    if(mp_con->player->health<1.)  {
-      ThingDel(l,mp_con->player);
-      mp_con->player=NULL;
-    } else 
-      QueRem(mp_con->player); //Will be re-inserted into the level
+    if(mp_con->player) {
+      if(mp_con->player->health<1.)  {
+        ThingDel(l,mp_con->player);
+        mp_con->player=NULL;
+      } else 
+        QueRem(mp_con->player); //Will be re-inserted into the level
+    }
     SendMessage(mp_con,&end_hdr);
   }
   FreeLevel(l);
@@ -1361,9 +1353,9 @@ next_level:;
   }
   WorldUnlock;
 }
-U0 PlayNetworkGame(U8 *at="0.0.0.0") {
+U0 PlayNetworkGame(U8 *at="0.0.0.0",I64 port=TOOM_PORT) {
 again:;
-  if(ClientBegin(at)) {
+  if(ClientBegin(at,port)) {
     PlayLevel(FALSE);
     goto again;
   }

@@ -112,7 +112,7 @@ U0 ParseThingProps() {
 	  &flagsp,
 	  &descp
 	  );
-    if(StrOcc(version,'2')&&!HashFind("DOOM2",Fs->hash_table,HTT_DEFINE_STR))
+    if(StrOcc(version,'2')&&!FramePtr("DOOM2"))
       goto skip;
     template=CAlloc(sizeof CDoomMonsterTemplate);
     MemCpy(template->spr_base_name,sprite,4);

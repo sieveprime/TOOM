@@ -536,7 +536,7 @@ Bool SetState(CDoomLevel *l,CMonsterThinker *m,U8 *st,CState *cached=NULL) {
     m->ran_state=FALSE;
   depth--;
 }
-
+extern U0     ServerSendPlayerDamagePush(CDoomPlayer*,F64,F64);
 U0 DamageMob(CDoomLevel *l,CDoomThing *target,CDoomThing *opp,F64 damage){
   CDoomMonsterTemplate *template=target->template;
   CMonsterThinker*thinker=target->thinker;
@@ -556,6 +556,7 @@ U0 DamageMob(CDoomLevel *l,CDoomThing *target,CDoomThing *opp,F64 damage){
     }
     target->momx+=thrust*Cos(angle);
     target->momy+=thrust*Sin(angle);
+    ServerSendPlayerDamagePush(target,angle,thrust);
   }
   if(IsPlayer(target)) {
     p2=target;
@@ -1501,55 +1502,55 @@ U0 BossDeath(CDoomLevel *l,CMonsterThinker *t) {
   dummy.sector_tag=666;
   self->flags&=~(TF_SHOOTABLE|TF_OBSTACLE|TF_FLOATING);
   self->solid=FALSE;
-#ifdef DOOM2
-  if(!StrCmp("MAP32",l->map_name)) {
-    for(
-	  treacherous_twin=head->next;
-	  head!=treacherous_twin;
-	  treacherous_twin=treacherous_twin->next
-    ) {
-      if(treacherous_twin->template==doom_thing_types[72]) { //Keen
-        if(treacherous_twin->health>0.)
-	  return;
+  if(FramePtr("DOOM2")) {
+    if(!StrCmp("MAP32",l->map_name)) {
+      for(
+	    treacherous_twin=head->next;
+	    head!=treacherous_twin;
+	    treacherous_twin=treacherous_twin->next
+      ) {
+        if(treacherous_twin->template==doom_thing_types[72]) { //Keen
+	  if(treacherous_twin->health>0.)
+	    return;
+        }
+      }  
+      dummy.special_type=action_sector_types[2];
+      ClientTriggerLinedef(l,&dummy,WACTIVATE_WALK,p); //-1 for all types
+      return;
+    }
+    if(!StrCmp("MAP07",l->map_name)) {
+//Check all baby spiders r dead
+      dummy.special_type=action_sector_types[158]; //Raise to texture
+      dummy.sector_tag=667;
+      for(
+	    treacherous_twin=head->next;
+	    head!=treacherous_twin;
+	    treacherous_twin=treacherous_twin->next
+      ) {
+        if(treacherous_twin->template==doom_thing_types[68]) { //Baby spider
+	  if(treacherous_twin->health>0.)
+	    goto skip_bspider;
+        }
       }
-    }  
-    dummy.special_type=action_sector_types[2];
-    ClientTriggerLinedef(l,&dummy,WACTIVATE_WALK,p); //-1 for all types
+      ClientTriggerLinedef(l,&dummy,-1,p); //-1 for all types
+skip_bspider:;
+      dummy.special_type=action_sector_types[37];
+      dummy.sector_tag=666;
+      for(
+	    treacherous_twin=head->next;
+	    head!=treacherous_twin;
+	    treacherous_twin=treacherous_twin->next
+      ) {
+        if(treacherous_twin->template==doom_thing_types[67]) { //Fatass
+	  if(treacherous_twin->health>0.)
+	    goto skip_fatass;
+        }
+      }
+      ClientTriggerLinedef(l,&dummy,-1,p); //-1 for all types
+skip_fatass:;
+    }
     return;
   }
-  if(!StrCmp("MAP07",l->map_name)) {
-//Check all baby spiders r dead
-  dummy.special_type=action_sector_types[158]; //Raise to texture
-  dummy.sector_tag=667;
-    for(
-	  treacherous_twin=head->next;
-	  head!=treacherous_twin;
-	  treacherous_twin=treacherous_twin->next
-    ) {
-      if(treacherous_twin->template==doom_thing_types[68]) { //Baby spider
-        if(treacherous_twin->health>0.)
-	  goto skip_bspider;
-      }
-    }
-    ClientTriggerLinedef(l,&dummy,-1,p); //-1 for all types
-skip_bspider:;
-    dummy.special_type=action_sector_types[37];
-    dummy.sector_tag=666;
-    for(
-	  treacherous_twin=head->next;
-	  head!=treacherous_twin;
-	  treacherous_twin=treacherous_twin->next
-    ) {
-      if(treacherous_twin->template==doom_thing_types[67]) { //Fatass
-	if(treacherous_twin->health>0.)
-	  goto skip_fatass;
-      }
-    }
-    ClientTriggerLinedef(l,&dummy,-1,p); //-1 for all types
-skip_fatass:;
-  }
-  return;
-#endif
   if(l->map_name[1]=='1') { //Episode 1
     for(
 	  treacherous_twin=head->next;
@@ -1811,287 +1812,287 @@ U0 BrainDie(CDoomLevel *l,CMonsterThinker *t) {
 U0 LoadMonsterInfo() {
   CDoomProjectileTemplate *p;
   CDoomMonsterTemplate *t;
-#ifdef DOOM2
+  if(FramePtr("DOOM2")) {
 //KEEN
-  t=doom_thing_types[72];
-  t->reaction_time=8*1/35.;
-  t->pain_time=12*1/35.;
-  t->mass=10000000;
-  t->health=100;
-  t->speed=0;
-  t->pain_chance=255./255;
-  UH("keenidle",t->_idle_frames=GenerateCacheFrames(t,"A"));
-  UH("keenhurt",t->_hurt_frames=GenerateCacheFrames(t,"MM"));
-  UH("keendie",t->_dying_frames=GenerateCacheFrames(t,"ABCDEFGHIJKL"));
-  AddState(t->spawn_state="KEENIDLE",t->reaction_time,t->_idle_frames,&NullState,"KEENIDLE");
-  AddState(t->pain_state="KEENPAIN",STATE_UNTIL_ANIM_DONE,t->_hurt_frames,&Pain,"KEENIDLE");
-  AddState(t->death_state="KEENDIE",STATE_NO_REPEAT,t->_dying_frames,&BossDeath,"ST_NULL");
+    t=doom_thing_types[72];
+    t->reaction_time=8*1/35.;
+    t->pain_time=12*1/35.;
+    t->mass=10000000;
+    t->health=100;
+    t->speed=0;
+    t->pain_chance=255./255;
+    UH("keenidle",t->_idle_frames=GenerateCacheFrames(t,"A"));
+    UH("keenhurt",t->_hurt_frames=GenerateCacheFrames(t,"MM"));
+    UH("keendie",t->_dying_frames=GenerateCacheFrames(t,"ABCDEFGHIJKL"));
+    AddState(t->spawn_state="KEENIDLE",t->reaction_time,t->_idle_frames,&NullState,"KEENIDLE");
+    AddState(t->pain_state="KEENPAIN",STATE_UNTIL_ANIM_DONE,t->_hurt_frames,&Pain,"KEENIDLE");
+    AddState(t->death_state="KEENDIE",STATE_NO_REPEAT,t->_dying_frames,&BossDeath,"ST_NULL");
 //Wolfenstein guy
-  t=doom_thing_types[84];
-  t->health=50;
-  t->mass=100;
-  t->reaction_time=1/35.*8;
-  t->pain_time=1/35.*6;
-  t->pain_chance=170./256;
-  UH("wolfidle",t->_idle_frames=GenerateCacheFrames(t,"AB"));
-  UH("wolfchase",t->_chase_frames=GenerateCacheFrames(t,"AABBCCDD"));
-  UH("wolfatk",t->_attack_frames=GenerateCacheFrames(t,"EFGFGF"));
-  UH("wolfhurt",t->_hurt_frames=GenerateCacheFrames(t,"HH"));
-  UH("wolfdie",t->_dying_frames=GenerateCacheFrames(t,"IJKLM"));
-  UH("wolfxdie",t->_gib_frames=GenerateCacheFrames(t,"NOPQRSTUV"));
-  UH("wolfres",t->_resurrect_frames=GenerateCacheFrames(t,"MLKJI"));
-  AddState(t->spawn_state="WOLF.STND",t->reaction_time,t->_idle_frames,&Look,"WOLF.STND");
-  AddState(t->see_state="WOLF.S_POSS_RUN",STATE_UNTIL_DONE_WALKING,t->_chase_frames,&Chase,"WOLF.S_POSS_RUN");
-  AddState(t->missile_state="WOLF.S_POSS_ATK1",0,t->_idle_frames,&FaceTarget,"WOLF.S_POSS_ATK2");
-  AddState("WOLF.S_POSS_ATK2",STATE_UNTIL_ANIM_DONE,t->_attack_frames,&CPosAttack,"WOLF.S_POSS_ATK2");
-  AddState(t->pain_state="WOLF.S_POSS_PAIN",STATE_UNTIL_ANIM_DONE,t->_hurt_frames,&Pain,"WOLF.S_POSS_RUN");
-  AddState(t->death_state="WOLF.S_POSS_DIE",STATE_NO_REPEAT,t->_dying_frames,&Fall,"ST_NULL");
-  AddState(t->gib_state="WOLF.S_POSS_GIB",STATE_NO_REPEAT,t->_gib_frames,&XFall,"ST_NULL");
-  AddState(t->resurrect_state="WOLF.RESURRECT",STATE_UNTIL_ANIM_DONE,t->_resurrect_frames,&Resurrect,t->see_state);
+    t=doom_thing_types[84];
+    t->health=50;
+    t->mass=100;
+    t->reaction_time=1/35.*8;
+    t->pain_time=1/35.*6;
+    t->pain_chance=170./256;
+    UH("wolfidle",t->_idle_frames=GenerateCacheFrames(t,"AB"));
+    UH("wolfchase",t->_chase_frames=GenerateCacheFrames(t,"AABBCCDD"));
+    UH("wolfatk",t->_attack_frames=GenerateCacheFrames(t,"EFGFGF"));
+    UH("wolfhurt",t->_hurt_frames=GenerateCacheFrames(t,"HH"));
+    UH("wolfdie",t->_dying_frames=GenerateCacheFrames(t,"IJKLM"));
+    UH("wolfxdie",t->_gib_frames=GenerateCacheFrames(t,"NOPQRSTUV"));
+    UH("wolfres",t->_resurrect_frames=GenerateCacheFrames(t,"MLKJI"));
+    AddState(t->spawn_state="WOLF.STND",t->reaction_time,t->_idle_frames,&Look,"WOLF.STND");
+    AddState(t->see_state="WOLF.S_POSS_RUN",STATE_UNTIL_DONE_WALKING,t->_chase_frames,&Chase,"WOLF.S_POSS_RUN");
+    AddState(t->missile_state="WOLF.S_POSS_ATK1",0,t->_idle_frames,&FaceTarget,"WOLF.S_POSS_ATK2");
+    AddState("WOLF.S_POSS_ATK2",STATE_UNTIL_ANIM_DONE,t->_attack_frames,&CPosAttack,"WOLF.S_POSS_ATK2");
+    AddState(t->pain_state="WOLF.S_POSS_PAIN",STATE_UNTIL_ANIM_DONE,t->_hurt_frames,&Pain,"WOLF.S_POSS_RUN");
+    AddState(t->death_state="WOLF.S_POSS_DIE",STATE_NO_REPEAT,t->_dying_frames,&Fall,"ST_NULL");
+    AddState(t->gib_state="WOLF.S_POSS_GIB",STATE_NO_REPEAT,t->_gib_frames,&XFall,"ST_NULL");
+    AddState(t->resurrect_state="WOLF.RESURRECT",STATE_UNTIL_ANIM_DONE,t->_resurrect_frames,&Resurrect,t->see_state);
 //Icon of sin(Cube)
-  UH("cube",spawn_cube=CAlloc(sizeof CDoomProjectileTemplate));
-  p=spawn_cube;
-  p->type=66666;
-  p->flags|=TF_FLOATING;
-  p->radius=6.;
-  p->height=32.;
-  p->speed=10.;
-  StrCpy(p->spr_base_name,"BOSF");
-  UH("cubeanim",p->animation=p->_idle_frames=GenerateCacheFrames(p,"ABCD"));
+    UH("cube",spawn_cube=CAlloc(sizeof CDoomProjectileTemplate));
+    p=spawn_cube;
+    p->type=66666;
+    p->flags|=TF_FLOATING;
+    p->radius=6.;
+    p->height=32.;
+    p->speed=10.;
+    StrCpy(p->spr_base_name,"BOSF");
+    UH("cubeanim",p->animation=p->_idle_frames=GenerateCacheFrames(p,"ABCD"));
 //spawn cube
-  t=doom_thing_types[87];
-  t->flags&=~(TF_MONSTER|TF_OBSTACLE);
+    t=doom_thing_types[87];
+    t->flags&=~(TF_MONSTER|TF_OBSTACLE);
 //Boss Brain
-  t=doom_thing_types[88];
-  t->health=250;
-  t->mass=100000;
-  t->reaction_time=1/35.*8;
-  t->pain_time=1/35.*36;
-  t->pain_chance=1.;
-  StrCpy(p->spr_base_name,"BBRN");
-  UH("brainidl",t->_idle_frames=GenerateCacheFrames(p,"A"));
-  UH("brainpain",t->_hurt_frames=GenerateCacheFrames(p,"AB"));
-  UH("braindie",t->_dying_frames=GenerateCacheFrames(p,"AAAA"));
-  AddState(t->spawn_state="BRAIN.STND",75./10.,NULL,&BrainSpit,"BRAIN.STND");
-  AddState(t->pain_state="BRAIN.PAIN",STATE_UNTIL_ANIM_DONE,t->_hurt_frames,&Pain,"BRAIN.STND");
-  AddState(t->death_state="BRAIN.DIE1",100/30.,t->_idle_frames,&BrainScream,"BRAIN.DIE2");
-  AddState("BRAIN.DIE2",0,t->_idle_frames,&BrainDie,"ST_NULL");
+    t=doom_thing_types[88];
+    t->health=250;
+    t->mass=100000;
+    t->reaction_time=1/35.*8;
+    t->pain_time=1/35.*36;
+    t->pain_chance=1.;
+    StrCpy(p->spr_base_name,"BBRN");
+    UH("brainidl",t->_idle_frames=GenerateCacheFrames(p,"A"));
+    UH("brainpain",t->_hurt_frames=GenerateCacheFrames(p,"AB"));
+    UH("braindie",t->_dying_frames=GenerateCacheFrames(p,"AAAA"));
+    AddState(t->spawn_state="BRAIN.STND",75./10.,NULL,&BrainSpit,"BRAIN.STND");
+    AddState(t->pain_state="BRAIN.PAIN",STATE_UNTIL_ANIM_DONE,t->_hurt_frames,&Pain,"BRAIN.STND");
+    AddState(t->death_state="BRAIN.DIE1",100/30.,t->_idle_frames,&BrainScream,"BRAIN.DIE2");
+    AddState("BRAIN.DIE2",0,t->_idle_frames,&BrainDie,"ST_NULL");
 //
-  vile_fire=CAlloc(sizeof CDoomThingTemplate);
-  StrCpy(vile_fire->spr_base_name,"FIRE");
-  UH("FIREt",vile_fire);
-  UH("FIREa",vile_fire->_animation=GenerateCacheFrames(vile_fire,"ABABCBCBCDCDCDEDEDEFEFEFGHGHGH"));
-  vile_fire->flags|=TF_FLOATING;
-  vile_fire->radius=20;
-  vile_fire->height=16;
+    vile_fire=CAlloc(sizeof CDoomThingTemplate);
+    StrCpy(vile_fire->spr_base_name,"FIRE");
+    UH("FIREt",vile_fire);
+    UH("FIREa",vile_fire->_animation=GenerateCacheFrames(vile_fire,"ABABCBCBCDCDCDEDEDEFEFEFGHGHGH"));
+    vile_fire->flags|=TF_FLOATING;
+    vile_fire->radius=20;
+    vile_fire->height=16;
 //Arch vile
-  t=doom_thing_types[64];
-  StrCpy(t->spr_base_name,"VILE");
-  UH("archidle",t->_idle_frames=GenerateCacheFrames(t,"AB"));
-  UH("archchase",t->_chase_frames=GenerateCacheFrames(t,"AABBCCDDEEFF"));
-  UH("archmelee",t->_melee_frames=GenerateCacheFrames(t,"GGHIJKLMNOP"));
-  UH("archhurt",t->_hurt_frames=GenerateCacheFrames(t,"QQ"));
-  UH("archdie",t->_dying_frames=GenerateCacheFrames(t,"QRSTUVWXYZ"));
-  UH("archatk",t->_attack_frames=GenerateCacheFrames(t,"GGHIJKLMNOP"));
-  UH("archheal",t->_heal_frames=GenerateCacheFrames(t,"\\\\\\"));
-  t->pain_time=1/35.*10;
-  t->reaction_time=1/35.*8;
-  t->health=700;
-  t->speed=16.;
-  t->mass=500;
-  t->damage=5;
-  t->pain_chance=10./255;
-  AddState(t->spawn_state="VILE.STND",8/10.,t->_idle_frames,&Look,"VILE.STND");
-  AddState(t->see_state="VILE.CHASE",t->reaction_time/4.,t->_chase_frames,&VileChase,"VILE.CHASE");
-  AddState(t->missile_state="VILE.ATK1",STATE_UNTIL_ANIM_DONE,t->_attack_frames,&VileAttack,"VILE.CHASE");
-  AddState(t->pain_state="VILE.PAIN",STATE_UNTIL_ANIM_DONE,t->_hurt_frames,&Pain,"VILE.CHASE");
-  AddState(t->heal_state="VILE.HEAL",STATE_UNTIL_ANIM_DONE,t->_heal_frames,NULL,"VILE.CHASE");
-  AddState(t->death_state="VILE.DEAD",STATE_NO_REPEAT,t->_dying_frames,&Fall,"ST_NULL");
+    t=doom_thing_types[64];
+    StrCpy(t->spr_base_name,"VILE");
+    UH("archidle",t->_idle_frames=GenerateCacheFrames(t,"AB"));
+    UH("archchase",t->_chase_frames=GenerateCacheFrames(t,"AABBCCDDEEFF"));
+    UH("archmelee",t->_melee_frames=GenerateCacheFrames(t,"GGHIJKLMNOP"));
+    UH("archhurt",t->_hurt_frames=GenerateCacheFrames(t,"QQ"));
+    UH("archdie",t->_dying_frames=GenerateCacheFrames(t,"QRSTUVWXYZ"));
+    UH("archatk",t->_attack_frames=GenerateCacheFrames(t,"GGHIJKLMNOP"));
+    UH("archheal",t->_heal_frames=GenerateCacheFrames(t,"\\\\\\"));
+    t->pain_time=1/35.*10;
+    t->reaction_time=1/35.*8;
+    t->health=700;
+    t->speed=16.;
+    t->mass=500;
+    t->damage=5;
+    t->pain_chance=10./255;
+    AddState(t->spawn_state="VILE.STND",8/10.,t->_idle_frames,&Look,"VILE.STND");
+    AddState(t->see_state="VILE.CHASE",t->reaction_time/4.,t->_chase_frames,&VileChase,"VILE.CHASE");
+    AddState(t->missile_state="VILE.ATK1",STATE_UNTIL_ANIM_DONE,t->_attack_frames,&VileAttack,"VILE.CHASE");
+    AddState(t->pain_state="VILE.PAIN",STATE_UNTIL_ANIM_DONE,t->_hurt_frames,&Pain,"VILE.CHASE");
+    AddState(t->heal_state="VILE.HEAL",STATE_UNTIL_ANIM_DONE,t->_heal_frames,NULL,"VILE.CHASE");
+    AddState(t->death_state="VILE.DEAD",STATE_NO_REPEAT,t->_dying_frames,&Fall,"ST_NULL");
 //
-  UH("skjelball",skel_missile=CAlloc(sizeof CDoomProjectileTemplate));
-  p=skel_missile;
-  p->type=35;
-  p->flags|=TF_FLOATING;
-  p->radius=11.;
-  p->height=8.;
-  p->direct=10; //5 min,40 max
-  p->direct_max=80;
-  p->speed=350./30;
-  StrCpy(p->spr_base_name,"FATB");
-  UH("skelmidle",p->animation=p->_idle_frames=GenerateCacheFrames(p,"AB"));
-  StrCpy(p->spr_base_name,"FATE"); //Eploding sprite
-  UH("skemhit",p->_hit_frames=GenerateCacheFrames(p,"ABC"));
+    UH("skjelball",skel_missile=CAlloc(sizeof CDoomProjectileTemplate));
+    p=skel_missile;
+    p->type=35;
+    p->flags|=TF_FLOATING;
+    p->radius=11.;
+    p->height=8.;
+    p->direct=10; //5 min,40 max
+    p->direct_max=80;
+    p->speed=350./30;
+    StrCpy(p->spr_base_name,"FATB");
+    UH("skelmidle",p->animation=p->_idle_frames=GenerateCacheFrames(p,"AB"));
+    StrCpy(p->spr_base_name,"FATE"); //Eploding sprite
+    UH("skemhit",p->_hit_frames=GenerateCacheFrames(p,"ABC"));
 //Revenant
-  t=doom_thing_types[66];
-  StrCpy(t->spr_base_name,"SKEL");
-  UH("revidle",t->_idle_frames=GenerateCacheFrames(t,"AB"));
-  UH("revchase",t->_chase_frames=GenerateCacheFrames(t,"AABBCCDDEEFF"));
-  UH("revatk",t->_attack_frames=GenerateCacheFrames(t,"JJKK"));
-  UH("revatkm",t->_melee_frames=GenerateCacheFrames(t,"GGHI"));
-  UH("revhurt",t->_hurt_frames=GenerateCacheFrames(t,"LL"));
-  UH("revdie",t->_dying_frames=GenerateCacheFrames(t,"LMNOPQ"));
-  UH("revres",t->_resurrect_frames=GenerateCacheFrames(t,"QPONML"));
-  t->pain_time=1/35.*10;
-  t->reaction_time=1/35.*8;
-  t->health=300;
-  t->speed=8.;
-  t->mass=4000;
-  t->damage=5;
-  t->pain_chance=100./255;
-  AddState(t->spawn_state="SKEL.S_POSS_STND",8/10.,t->_idle_frames,&Look,"SKEL.S_POSS_STND");
-  AddState(t->see_state="SKEL.S_POSS_RUN0",STATE_UNTIL_DONE_WALKING,t->_chase_frames,&Chase,"SKEL.S_POSS_RUN0");
-  AddState(t->missile_state="SKEL.S_POSS_ATK1",0,t->_idle_frames,&FaceTarget,"SKEL.S_POSS_ATK1");
-  AddState("SKEL.S_POSS_ATK1",STATE_UNTIL_ANIM_DONE,t->_attack_frames,&SkelMissile,"SKEL.S_POSS_RUN0");
-  AddState(t->pain_state="SKEL.S_POSS_PAIN",STATE_UNTIL_ANIM_DONE,t->_hurt_frames,&Pain,"SKEL.S_POSS_RUN0");
-  AddState(t->death_state="SKEL.DEAD",STATE_NO_REPEAT,t->_dying_frames,&Fall,"ST_NULL");
-  AddState(t->melee_state="SKEL.S_POSS_MELE1",0,t->_melee_frames,&FaceTarget,"SKEL.S_POSS_MELE2");
-  AddState("SKEL.S_POSS_MELE2",0,t->_melee_frames,&SkelWhoosh,"SKEL.S_POSS_MELE3");
-  AddState("SKEL.S_POSS_MELE3",0,t->_melee_frames,&FaceTarget,"SKEL.S_POSS_MELE4");
-  AddState("SKEL.S_POSS_MELE4",STATE_UNTIL_ANIM_DONE,t->_melee_frames,&SkelFist,"SKEL.S_POSS_RUN0");
-  AddState(t->resurrect_state="SKEL.RESURRECT",STATE_UNTIL_ANIM_DONE,t->_resurrect_frames,&Resurrect,t->see_state);
+    t=doom_thing_types[66];
+    StrCpy(t->spr_base_name,"SKEL");
+    UH("revidle",t->_idle_frames=GenerateCacheFrames(t,"AB"));
+    UH("revchase",t->_chase_frames=GenerateCacheFrames(t,"AABBCCDDEEFF"));
+    UH("revatk",t->_attack_frames=GenerateCacheFrames(t,"JJKK"));
+    UH("revatkm",t->_melee_frames=GenerateCacheFrames(t,"GGHI"));
+    UH("revhurt",t->_hurt_frames=GenerateCacheFrames(t,"LL"));
+    UH("revdie",t->_dying_frames=GenerateCacheFrames(t,"LMNOPQ"));
+    UH("revres",t->_resurrect_frames=GenerateCacheFrames(t,"QPONML"));
+    t->pain_time=1/35.*10;
+    t->reaction_time=1/35.*8;
+    t->health=300;
+    t->speed=8.;
+    t->mass=4000;
+    t->damage=5;
+    t->pain_chance=100./255;
+    AddState(t->spawn_state="SKEL.S_POSS_STND",8/10.,t->_idle_frames,&Look,"SKEL.S_POSS_STND");
+    AddState(t->see_state="SKEL.S_POSS_RUN0",STATE_UNTIL_DONE_WALKING,t->_chase_frames,&Chase,"SKEL.S_POSS_RUN0");
+    AddState(t->missile_state="SKEL.S_POSS_ATK1",0,t->_idle_frames,&FaceTarget,"SKEL.S_POSS_ATK1");
+    AddState("SKEL.S_POSS_ATK1",STATE_UNTIL_ANIM_DONE,t->_attack_frames,&SkelMissile,"SKEL.S_POSS_RUN0");
+    AddState(t->pain_state="SKEL.S_POSS_PAIN",STATE_UNTIL_ANIM_DONE,t->_hurt_frames,&Pain,"SKEL.S_POSS_RUN0");
+    AddState(t->death_state="SKEL.DEAD",STATE_NO_REPEAT,t->_dying_frames,&Fall,"ST_NULL");
+    AddState(t->melee_state="SKEL.S_POSS_MELE1",0,t->_melee_frames,&FaceTarget,"SKEL.S_POSS_MELE2");
+    AddState("SKEL.S_POSS_MELE2",0,t->_melee_frames,&SkelWhoosh,"SKEL.S_POSS_MELE3");
+    AddState("SKEL.S_POSS_MELE3",0,t->_melee_frames,&FaceTarget,"SKEL.S_POSS_MELE4");
+    AddState("SKEL.S_POSS_MELE4",STATE_UNTIL_ANIM_DONE,t->_melee_frames,&SkelFist,"SKEL.S_POSS_RUN0");
+    AddState(t->resurrect_state="SKEL.RESURRECT",STATE_UNTIL_ANIM_DONE,t->_resurrect_frames,&Resurrect,t->see_state);
 //Pain elemental 
-  t=doom_thing_types[71];
-  StrCpy(t->spr_base_name,"PAIN");
-  UH("painiidle",t->_idle_frames=GenerateCacheFrames(t,"A"));
-  UH("painchase",t->_chase_frames=GenerateCacheFrames(t,"AABBCC"));
-  UH("painatk",t->_attack_frames=GenerateCacheFrames(t,"DEFF"));
-  UH("painhurt",t->_hurt_frames=GenerateCacheFrames(t,"GG"));
-  UH("paindie",t->_dying_frames=GenerateCacheFrames(t,"HIJKLM"));
-  t->pain_time=1/35.*4;
-  t->reaction_time=1/35.*8;
-  t->health=600;
-  t->speed=8.;
-  t->mass=4000;
-  t->damage=5;
-  t->pain_chance=128./255;
-  AddState(t->spawn_state="PAIN.S_POSS_STND",t->reaction_time,t->_idle_frames,&Look,"PAIN.S_POSS_STND");
-  AddState(t->see_state="PAIN.S_POSS_RUN0",STATE_UNTIL_DONE_WALKING,t->_chase_frames,&Chase,"PAIN.S_POSS_RUN0");
-  AddState(t->missile_state="PAIN.S_POSS_ATK1",0,t->_idle_frames,&FaceTarget,"PAIN.S_POSS_ATK2");
-  AddState("PAIN.S_POSS_ATK2",STATE_UNTIL_ANIM_DONE,t->_attack_frames,&PainAttack,"PAIN.S_POSS_RUN0");
-  AddState(t->pain_state="PAIN.S_POSS_PAIN",STATE_UNTIL_ANIM_DONE,t->_hurt_frames,&Pain,"PAIN.S_POSS_RUN0");
-  AddState(t->death_state="PAIN.DEAD",STATE_NO_REPEAT,t->_dying_frames,&Fall,"PAIN.DEAD2");
-  AddState("PAIN.DEAD2",STATE_NO_REPEAT,t->_dying_frames,&Vanish,"ST_NULL");
-  //Hell knight
-  t=doom_thing_types[69];
-  StrCpy(t->spr_base_name,"BOS2");
-  UH("helliidle",t->_idle_frames=GenerateCacheFrames(t,"AB"));
-  UH("hellchase",t->_chase_frames=GenerateCacheFrames(t,"AABBCCDD"));
-  UH("hellatk",t->_attack_frames=GenerateCacheFrames(t,"EFG"));
-  UH("hellatk2",t->_melee_frames=GenerateCacheFrames(t,"EFG"));
-  UH("hellhurt",t->_hurt_frames=GenerateCacheFrames(t,"HH"));
-  UH("helldie",t->_dying_frames=GenerateCacheFrames(t,"IJKLMNO"));
-  UH("hellres",t->_resurrect_frames=GenerateCacheFrames(t,"ONMLKJI"));
-  t->pain_time=1/35.*4;
-  t->reaction_time=1/35.*8;
-  t->health=600;
-  t->speed=8.;
-  t->mass=1000;
-  t->damage=5;
-  t->pain_chance=50./255;
-  AddState(t->spawn_state="HELL.S_POSS_STND",t->reaction_time,t->_idle_frames,&Look,"HELL.S_POSS_STND");
-  AddState(t->see_state="HELL.S_POSS_RUN",STATE_UNTIL_DONE_WALKING,t->_chase_frames,&Chase,"HELL.S_POSS_RUN");
-  AddState(t->missile_state="HELL.S_POSS_ATK1",0,t->_idle_frames,&FaceTarget,"HELL.S_POSS_ATK2");
-  AddState(t->missile_state="HELL.S_POSS_ATK2",0,t->_idle_frames,&FaceTarget,"HELL.S_POSS_ATK3");
-  AddState("HELL.S_POSS_ATK3",STATE_UNTIL_ANIM_DONE,t->_attack_frames,&BarronOfHellAttack,"HELL.S_POSS_RUN");
-  AddState(t->pain_state="HELL.S_POSS_PAIN",STATE_UNTIL_ANIM_DONE,t->_hurt_frames,&Pain,"HELL.S_POSS_RUN");
-  AddState(t->death_state="HELL.S_POSS_DIE",STATE_NO_REPEAT,t->_dying_frames,&Fall,"ST_NULL");
-  AddState(t->resurrect_state="HELL.RESURRECT",STATE_UNTIL_ANIM_DONE,t->_resurrect_frames,&Resurrect,t->see_state);
+    t=doom_thing_types[71];
+    StrCpy(t->spr_base_name,"PAIN");
+    UH("painiidle",t->_idle_frames=GenerateCacheFrames(t,"A"));
+    UH("painchase",t->_chase_frames=GenerateCacheFrames(t,"AABBCC"));
+    UH("painatk",t->_attack_frames=GenerateCacheFrames(t,"DEFF"));
+    UH("painhurt",t->_hurt_frames=GenerateCacheFrames(t,"GG"));
+    UH("paindie",t->_dying_frames=GenerateCacheFrames(t,"HIJKLM"));
+    t->pain_time=1/35.*4;
+    t->reaction_time=1/35.*8;
+    t->health=600;
+    t->speed=8.;
+    t->mass=4000;
+    t->damage=5;
+    t->pain_chance=128./255;
+    AddState(t->spawn_state="PAIN.S_POSS_STND",t->reaction_time,t->_idle_frames,&Look,"PAIN.S_POSS_STND");
+    AddState(t->see_state="PAIN.S_POSS_RUN0",STATE_UNTIL_DONE_WALKING,t->_chase_frames,&Chase,"PAIN.S_POSS_RUN0");
+    AddState(t->missile_state="PAIN.S_POSS_ATK1",0,t->_idle_frames,&FaceTarget,"PAIN.S_POSS_ATK2");
+    AddState("PAIN.S_POSS_ATK2",STATE_UNTIL_ANIM_DONE,t->_attack_frames,&PainAttack,"PAIN.S_POSS_RUN0");
+    AddState(t->pain_state="PAIN.S_POSS_PAIN",STATE_UNTIL_ANIM_DONE,t->_hurt_frames,&Pain,"PAIN.S_POSS_RUN0");
+    AddState(t->death_state="PAIN.DEAD",STATE_NO_REPEAT,t->_dying_frames,&Fall,"PAIN.DEAD2");
+    AddState("PAIN.DEAD2",STATE_NO_REPEAT,t->_dying_frames,&Vanish,"ST_NULL");
+//Hell knight
+    t=doom_thing_types[69];
+    StrCpy(t->spr_base_name,"BOS2");
+    UH("helliidle",t->_idle_frames=GenerateCacheFrames(t,"AB"));
+    UH("hellchase",t->_chase_frames=GenerateCacheFrames(t,"AABBCCDD"));
+    UH("hellatk",t->_attack_frames=GenerateCacheFrames(t,"EFG"));
+    UH("hellatk2",t->_melee_frames=GenerateCacheFrames(t,"EFG"));
+    UH("hellhurt",t->_hurt_frames=GenerateCacheFrames(t,"HH"));
+    UH("helldie",t->_dying_frames=GenerateCacheFrames(t,"IJKLMNO"));
+    UH("hellres",t->_resurrect_frames=GenerateCacheFrames(t,"ONMLKJI"));
+    t->pain_time=1/35.*4;
+    t->reaction_time=1/35.*8;
+    t->health=600;
+    t->speed=8.;
+    t->mass=1000;
+    t->damage=5;
+    t->pain_chance=50./255;
+    AddState(t->spawn_state="HELL.S_POSS_STND",t->reaction_time,t->_idle_frames,&Look,"HELL.S_POSS_STND");
+    AddState(t->see_state="HELL.S_POSS_RUN",STATE_UNTIL_DONE_WALKING,t->_chase_frames,&Chase,"HELL.S_POSS_RUN");
+    AddState(t->missile_state="HELL.S_POSS_ATK1",0,t->_idle_frames,&FaceTarget,"HELL.S_POSS_ATK2");
+    AddState(t->missile_state="HELL.S_POSS_ATK2",0,t->_idle_frames,&FaceTarget,"HELL.S_POSS_ATK3");
+    AddState("HELL.S_POSS_ATK3",STATE_UNTIL_ANIM_DONE,t->_attack_frames,&BarronOfHellAttack,"HELL.S_POSS_RUN");
+    AddState(t->pain_state="HELL.S_POSS_PAIN",STATE_UNTIL_ANIM_DONE,t->_hurt_frames,&Pain,"HELL.S_POSS_RUN");
+    AddState(t->death_state="HELL.S_POSS_DIE",STATE_NO_REPEAT,t->_dying_frames,&Fall,"ST_NULL");
+    AddState(t->resurrect_state="HELL.RESURRECT",STATE_UNTIL_ANIM_DONE,t->_resurrect_frames,&Resurrect,t->see_state);
 //Mancubus ball
-  UH("manball",mancubus_fireball=CAlloc(sizeof CDoomProjectileTemplate));
-  p=mancubus_fireball;;
-  p->flags|=TF_FLOATING;
-  p->speed=700/30.;
-  p->direct=8;
-  p->radius=6.;
-  p->height=8.;
-  p->splash=128.;
-  StrCpy(p->spr_base_name,"MANF");
-  UH("manballidle",p->animation=p->_idle_frames=GenerateCacheFrames(p,"AB"));
-  StrCpy(p->spr_base_name,"MISL");
-  UH("manballhit",p->_hit_frames=GenerateCacheFrames(p,"BCD"));
+    UH("manball",mancubus_fireball=CAlloc(sizeof CDoomProjectileTemplate));
+    p=mancubus_fireball;;
+    p->flags|=TF_FLOATING;
+    p->speed=700/30.;
+    p->direct=8;
+    p->radius=6.;
+    p->height=8.;
+    p->splash=128.;
+    StrCpy(p->spr_base_name,"MANF");
+    UH("manballidle",p->animation=p->_idle_frames=GenerateCacheFrames(p,"AB"));
+    StrCpy(p->spr_base_name,"MISL");
+    UH("manballhit",p->_hit_frames=GenerateCacheFrames(p,"BCD"));
 //MAncubus
-  t=doom_thing_types[67];
-  StrCpy(t->spr_base_name,"FATT");
-  UH("fatiidle",t->_idle_frames=GenerateCacheFrames(t,"AB"));
-  UH("fatichase",t->_chase_frames=GenerateCacheFrames(t,"AABBCCDDEEFF"));
-  UH("fatiatk",t->_attack_frames=GenerateCacheFrames(t,"GHIGHIGHIG"));
-  UH("fatihurt",t->_hurt_frames=GenerateCacheFrames(t,"JJ"));
-  UH("fatdie",t->_dying_frames=GenerateCacheFrames(t,"KLMNOPQRST"));
-  UH("fatres",t->_resurrect_frames=GenerateCacheFrames(t,"RQPONMLK"));
-  t->pain_time=1/35.*6;
-  t->reaction_time=1/35.*8;
-  t->health=600;
-  t->speed=8.;
-  t->mass=1000;
-  t->damage=5;
-  t->pain_chance=80./255;
-  AddState(t->spawn_state="FATT.S_POSS_STND",t->reaction_time,t->_idle_frames,&Look,"FATT.S_POSS_STND");
-  AddState(t->see_state="FATT.S_POSS_RUN0",STATE_UNTIL_DONE_WALKING,t->_chase_frames,&Chase,"FATT.S_POSS_RUN0");
-  AddState(t->missile_state="FATT.S_POSS_ATK1",0,t->_idle_frames,&FaceTarget,"FATT.S_POSS_ATK1");
-  AddState("FATT.S_POSS_ATK1",1/10.,t->_attack_frames,&FatAttack1,"FATT.S_POSS_ATK2");
-  AddState("FATT.S_POSS_ATK2",1/10.,t->_attack_frames,&FaceTarget,"FATT.S_POSS_ATK3");
-  AddState("FATT.S_POSS_ATK3",1/10.,t->_attack_frames,&FaceTarget,"FATT.S_POSS_ATK4");
-  AddState("FATT.S_POSS_ATK4",1/10.,t->_attack_frames,&FatAttack2,"FATT.S_POSS_ATK5");
-  AddState("FATT.S_POSS_ATK5",1/10.,t->_attack_frames,&FaceTarget,"FATT.S_POSS_ATK6");
-  AddState("FATT.S_POSS_ATK6",STATE_UNTIL_ANIM_DONE,t->_attack_frames,&FatAttack3,"FATT.S_POSS_RUN0");
-  AddState(t->pain_state="FATT.S_POSS_PAIN",STATE_UNTIL_ANIM_DONE,t->_hurt_frames,&Pain,"FATT.S_POSS_RUN0");
-  AddState(t->death_state="FATT.DEAD",0,t->_dying_frames,&Scream,"FATT.DEAD2");
-  AddState("FATT.DEAD2",STATE_NO_REPEAT,t->_dying_frames,&Fall,"FATT.DEAD3");
-  AddState("FATT.DEAD3",STATE_NO_REPEAT,t->_dying_frames,&BossDeath,"ST_NULL");
-  AddState(t->resurrect_state="FATT.RESURRECT",STATE_UNTIL_ANIM_DONE,t->_resurrect_frames,&Resurrect,t->see_state);
+    t=doom_thing_types[67];
+    StrCpy(t->spr_base_name,"FATT");
+    UH("fatiidle",t->_idle_frames=GenerateCacheFrames(t,"AB"));
+    UH("fatichase",t->_chase_frames=GenerateCacheFrames(t,"AABBCCDDEEFF"));
+    UH("fatiatk",t->_attack_frames=GenerateCacheFrames(t,"GHIGHIGHIG"));
+    UH("fatihurt",t->_hurt_frames=GenerateCacheFrames(t,"JJ"));
+    UH("fatdie",t->_dying_frames=GenerateCacheFrames(t,"KLMNOPQRST"));
+    UH("fatres",t->_resurrect_frames=GenerateCacheFrames(t,"RQPONMLK"));
+    t->pain_time=1/35.*6;
+    t->reaction_time=1/35.*8;
+    t->health=600;
+    t->speed=8.;
+    t->mass=1000;
+    t->damage=5;
+    t->pain_chance=80./255;
+    AddState(t->spawn_state="FATT.S_POSS_STND",t->reaction_time,t->_idle_frames,&Look,"FATT.S_POSS_STND");
+    AddState(t->see_state="FATT.S_POSS_RUN0",STATE_UNTIL_DONE_WALKING,t->_chase_frames,&Chase,"FATT.S_POSS_RUN0");
+    AddState(t->missile_state="FATT.S_POSS_ATK1",0,t->_idle_frames,&FaceTarget,"FATT.S_POSS_ATK1");
+    AddState("FATT.S_POSS_ATK1",1/10.,t->_attack_frames,&FatAttack1,"FATT.S_POSS_ATK2");
+    AddState("FATT.S_POSS_ATK2",1/10.,t->_attack_frames,&FaceTarget,"FATT.S_POSS_ATK3");
+    AddState("FATT.S_POSS_ATK3",1/10.,t->_attack_frames,&FaceTarget,"FATT.S_POSS_ATK4");
+    AddState("FATT.S_POSS_ATK4",1/10.,t->_attack_frames,&FatAttack2,"FATT.S_POSS_ATK5");
+    AddState("FATT.S_POSS_ATK5",1/10.,t->_attack_frames,&FaceTarget,"FATT.S_POSS_ATK6");
+    AddState("FATT.S_POSS_ATK6",STATE_UNTIL_ANIM_DONE,t->_attack_frames,&FatAttack3,"FATT.S_POSS_RUN0");
+    AddState(t->pain_state="FATT.S_POSS_PAIN",STATE_UNTIL_ANIM_DONE,t->_hurt_frames,&Pain,"FATT.S_POSS_RUN0");
+    AddState(t->death_state="FATT.DEAD",0,t->_dying_frames,&Scream,"FATT.DEAD2");
+    AddState("FATT.DEAD2",STATE_NO_REPEAT,t->_dying_frames,&Fall,"FATT.DEAD3");
+    AddState("FATT.DEAD3",STATE_NO_REPEAT,t->_dying_frames,&BossDeath,"ST_NULL");
+    AddState(t->resurrect_state="FATT.RESURRECT",STATE_UNTIL_ANIM_DONE,t->_resurrect_frames,&Resurrect,t->see_state);
 //Baby Spider
-  t=doom_thing_types[68];
-  StrCpy(t->spr_base_name,"BSPI");
-  UH("bspiidle",t->_idle_frames=GenerateCacheFrames(t,"AB"));
-  UH("bspichase",t->_chase_frames=GenerateCacheFrames(t,"AABBCCDDEEFF"));
-  UH("bspiatk",t->_attack_frames=GenerateCacheFrames(t,"GHH"));
-  UH("bspihurt",t->_hurt_frames=GenerateCacheFrames(t,"II"));
-  UH("bspidie",t->_dying_frames=GenerateCacheFrames(t,"JKLMNOP"));
-  UH("bspres",t->_resurrect_frames=GenerateCacheFrames(t,"PONMLKJ"));
-  t->pain_time=1/35.*6;
-  t->reaction_time=1/35.*8;
-  t->health=500;
-  t->speed=12.;
-  t->mass=600;
-  t->damage=5;
-  t->pain_chance=128./255;
-  AddState(t->spawn_state="BSPI.S_POSS_STND",t->reaction_time,t->_idle_frames,&Look,"BSPI.S_POSS_STND");
-  AddState(t->see_state="BSPI.S_POSS_RUN0",t->reaction_time/2,t->_chase_frames,&Chase,"BSPI.S_POSS_RUN0");
-  AddState("BSPI.S_POSS_RUN1",t->reaction_time/2,t->_chase_frames,&Chase,"BSPI.S_POSS_RUN2");
-  AddState("BSPI.S_POSS_RUN2",0,t->_chase_frames,&BabyMetal,"BSPI.S_POSS_RUN3");
-  AddState("BSPI.S_POSS_RUN3",t->reaction_time/2,t->_chase_frames,&Chase,"BSPI.S_POSS_RUN0");
-  AddState(t->missile_state="BSPI.S_POSS_ATK1",0,t->_idle_frames,&FaceTarget,"BSPI.S_POSS_ATK2");
-  AddState("BSPI.S_POSS_ATK2",1/10.,t->_attack_frames,&BabyAttack,"BSPI.S_POSS_ATK3");
-  AddState("BSPI.S_POSS_ATK3",1/10.,t->_attack_frames,&BabyRefire,"BSPI.S_POSS_ATK2");
-  AddState(t->pain_state="BSPI.S_POSS_PAIN",STATE_UNTIL_ANIM_DONE,t->_hurt_frames,&Pain,"BSPI.S_POSS_RUN0");
-  AddState(t->death_state="BSPI.DEAD",0,t->_dying_frames,&Fall,"BSPI.DEAD2");
-  AddState("BSPI.DEAD2",STATE_NO_REPEAT,t->_dying_frames,&BossDeath,"ST_NULL");
-  AddState(t->resurrect_state="BSPI.RESURRECT",STATE_UNTIL_ANIM_DONE,t->_resurrect_frames,&Resurrect,t->see_state);
+    t=doom_thing_types[68];
+    StrCpy(t->spr_base_name,"BSPI");
+    UH("bspiidle",t->_idle_frames=GenerateCacheFrames(t,"AB"));
+    UH("bspichase",t->_chase_frames=GenerateCacheFrames(t,"AABBCCDDEEFF"));
+    UH("bspiatk",t->_attack_frames=GenerateCacheFrames(t,"GHH"));
+    UH("bspihurt",t->_hurt_frames=GenerateCacheFrames(t,"II"));
+    UH("bspidie",t->_dying_frames=GenerateCacheFrames(t,"JKLMNOP"));
+    UH("bspres",t->_resurrect_frames=GenerateCacheFrames(t,"PONMLKJ"));
+    t->pain_time=1/35.*6;
+    t->reaction_time=1/35.*8;
+    t->health=500;
+    t->speed=12.;
+    t->mass=600;
+    t->damage=5;
+    t->pain_chance=128./255;
+    AddState(t->spawn_state="BSPI.S_POSS_STND",t->reaction_time,t->_idle_frames,&Look,"BSPI.S_POSS_STND");
+    AddState(t->see_state="BSPI.S_POSS_RUN0",t->reaction_time/2,t->_chase_frames,&Chase,"BSPI.S_POSS_RUN0");
+    AddState("BSPI.S_POSS_RUN1",t->reaction_time/2,t->_chase_frames,&Chase,"BSPI.S_POSS_RUN2");
+    AddState("BSPI.S_POSS_RUN2",0,t->_chase_frames,&BabyMetal,"BSPI.S_POSS_RUN3");
+    AddState("BSPI.S_POSS_RUN3",t->reaction_time/2,t->_chase_frames,&Chase,"BSPI.S_POSS_RUN0");
+    AddState(t->missile_state="BSPI.S_POSS_ATK1",0,t->_idle_frames,&FaceTarget,"BSPI.S_POSS_ATK2");
+    AddState("BSPI.S_POSS_ATK2",1/10.,t->_attack_frames,&BabyAttack,"BSPI.S_POSS_ATK3");
+    AddState("BSPI.S_POSS_ATK3",1/10.,t->_attack_frames,&BabyRefire,"BSPI.S_POSS_ATK2");
+    AddState(t->pain_state="BSPI.S_POSS_PAIN",STATE_UNTIL_ANIM_DONE,t->_hurt_frames,&Pain,"BSPI.S_POSS_RUN0");
+    AddState(t->death_state="BSPI.DEAD",0,t->_dying_frames,&Fall,"BSPI.DEAD2");
+    AddState("BSPI.DEAD2",STATE_NO_REPEAT,t->_dying_frames,&BossDeath,"ST_NULL");
+    AddState(t->resurrect_state="BSPI.RESURRECT",STATE_UNTIL_ANIM_DONE,t->_resurrect_frames,&Resurrect,t->see_state);
 //Chaingun guy
-  t=doom_thing_types[65];
-  StrCpy(t->spr_base_name,"CPOS");
-  UH("cgres",t->_resurrect_frames=GenerateCacheFrames(t,"NMLKJIH"));
-  UH("cgidle",t->_idle_frames=GenerateCacheFrames(t,"AB"));
-  UH("cgchase",t->_chase_frames=GenerateCacheFrames(t,"AABBCCDD"));
-  UH("cgattack",t->_attack_frames=GenerateCacheFrames(t,"EFEF"));
-  UH("cgdhurt",t->_hurt_frames=GenerateCacheFrames(t,"GG"));
-  UH("cgdying",t->_dying_frames=GenerateCacheFrames(t,"HIJKLMN"));
-  UH("cggib",t->_gib_frames=GenerateCacheFrames(t,"OPQRST"));
-  t->health=70;
-  t->mass=100;
-  t->pain_chance=170/256.;
-  t->pain_time=1/35.*6;
-  t->damage=3;
-  t->reaction_time=1/35.*8;
-  t->speed=8;
-  AddState(t->spawn_state="CPOS.S_POSS_STND",t->reaction_time,t->_idle_frames,&Look,"CPOS.S_POSS_STND");
-  AddState(t->see_state="CPOS.S_POSS_RUN",STATE_UNTIL_DONE_WALKING,t->_chase_frames,&Chase,"CPOS.S_POSS_RUN");
-  AddState(t->resurrect_state="CPOS.RESURRECT",STATE_UNTIL_ANIM_DONE,t->_chase_frames,&Resurrect,"CPOS.S_POSS_RUN");
-  AddState(t->missile_state="CPOS.S_POSS_ATK2",1/2.5,t->_attack_frames,&CPosAttack,"CPOS.S_POSS_ATK2");
-  AddState(t->pain_state="CPOS.S_POSS_PAIN",STATE_UNTIL_ANIM_DONE,t->_hurt_frames,&Pain,"CPOS.S_POSS_RUN");
-  AddState(t->death_state="CPOS.S_POSS_DIE",STATE_NO_REPEAT,t->_dying_frames,&Fall,"ST_NULL");
-  AddState(t->gib_state="CPOS.S_POSS_GIB",STATE_NO_REPEAT,t->_gib_frames,&XFall,"ST_NULL");
-#endif
+    t=doom_thing_types[65];
+    StrCpy(t->spr_base_name,"CPOS");
+    UH("cgres",t->_resurrect_frames=GenerateCacheFrames(t,"NMLKJIH"));
+    UH("cgidle",t->_idle_frames=GenerateCacheFrames(t,"AB"));
+    UH("cgchase",t->_chase_frames=GenerateCacheFrames(t,"AABBCCDD"));
+    UH("cgattack",t->_attack_frames=GenerateCacheFrames(t,"EFEF"));
+    UH("cgdhurt",t->_hurt_frames=GenerateCacheFrames(t,"GG"));
+    UH("cgdying",t->_dying_frames=GenerateCacheFrames(t,"HIJKLMN"));
+    UH("cggib",t->_gib_frames=GenerateCacheFrames(t,"OPQRST"));
+    t->health=70;
+    t->mass=100;
+    t->pain_chance=170/256.;
+    t->pain_time=1/35.*6;
+    t->damage=3;
+    t->reaction_time=1/35.*8;
+    t->speed=8;
+    AddState(t->spawn_state="CPOS.S_POSS_STND",t->reaction_time,t->_idle_frames,&Look,"CPOS.S_POSS_STND");
+    AddState(t->see_state="CPOS.S_POSS_RUN",STATE_UNTIL_DONE_WALKING,t->_chase_frames,&Chase,"CPOS.S_POSS_RUN");
+    AddState(t->resurrect_state="CPOS.RESURRECT",STATE_UNTIL_ANIM_DONE,t->_chase_frames,&Resurrect,"CPOS.S_POSS_RUN");
+    AddState(t->missile_state="CPOS.S_POSS_ATK2",1/2.5,t->_attack_frames,&CPosAttack,"CPOS.S_POSS_ATK2");
+    AddState(t->pain_state="CPOS.S_POSS_PAIN",STATE_UNTIL_ANIM_DONE,t->_hurt_frames,&Pain,"CPOS.S_POSS_RUN");
+    AddState(t->death_state="CPOS.S_POSS_DIE",STATE_NO_REPEAT,t->_dying_frames,&Fall,"ST_NULL");
+    AddState(t->gib_state="CPOS.S_POSS_GIB",STATE_NO_REPEAT,t->_gib_frames,&XFall,"ST_NULL");
+  }
 //Player
   t=doom_thing_types[1];
   t->mass=100;
@@ -2109,7 +2110,7 @@ U0 LoadMonsterInfo() {
   t->_idle_frames=t->_animation;
   StrCpy(t->spr_base_name,"BEXP");
   UH("barrelDIE",t->_dying_frames=GenerateCacheFrames(t,"ABCDE"));
-  //https://doomwiki.org/wiki/Imp
+//https://doomwiki.org/wiki/Imp
   AddState("ST_NULL",0.,NULL,&NullState,"ST_NULL");
   t=doom_thing_types[0xbb9];
   UH("impidle",t->_idle_frames=GenerateCacheFrames(t,"AB"));
@@ -2261,7 +2262,7 @@ U0 LoadMonsterInfo() {
   StrCpy(p->spr_base_name,"MISL");
   UH("brainexphit",p->animation=p->_hit_frames=GenerateCacheFrames(p,"BCD"));
 
-//Pink demon
+  //Pink demon
   t=doom_thing_types[0xbba];
   t->reaction_time=1/35.*8;
   t->pain_time=1/35.*4;
@@ -2382,7 +2383,7 @@ U0 LoadMonsterInfo() {
   AddState(t->death_state="SPIDER.DIE",STATE_NO_REPEAT,t->_dying_frames,&Fall,"SPIDER.DIE2");
   AddState("SPIDER.DIE2",0,t->_dying_frames,&BossDeath,"ST_NULL");
 
-//Zombieman
+  //Zombieman
   t=doom_thing_types[0xbbc];
   t->reaction_time=1/35.*8;
   t->pain_time=1/35.*6;

@@ -1,3 +1,4 @@
+#define mp_cnt 1
 #define DOOM_MAIN "Doom" 
 #exe {Cd(__DIR__);};;
 #ifndef PrintI 
@@ -8,7 +9,6 @@ U0 DbgPrint(U8*,...) {}
 #ifndef MemSetI64
 #define MemSetI64 MemSetU64
 #endif
-#define mp_cnt 1
 #define SKY_PIXEL 0xb0
 Bool in_level=FALSE,screen_melt=FALSE;
 CDC *doom_scrn=DCNew(GR_WIDTH,GR_HEIGHT);
@@ -29,8 +29,6 @@ F64 DistFromLine(CD2 *p,CD2 *l1,CD2 *l2) {
 
 #define MUZZLE_FLASH_LIGHT 50
 
-extern Bool IsNetworkGameServer();
-extern Bool IsNetworkGameClient();
 extern U0 ClientPressAWall(CDoomLevel *l,CDoomThing *p);
 extern U0 ClientPlayerSpawnMissile(CDoomLevel *l,CDoomThing *p,CDoomThing *target,U64 type);
 extern U0 ClientPlayerLineAttack(CDoomLevel *l,CDoomThing *p,CDoomThing *target,F64 rnage,F64 angle,F64 damage,Bool melee=FALSE);
@@ -1250,7 +1248,7 @@ U0 DrawSkyAndFillHoles(CDC *to_dc,CDoomLevel *l,CDoomCamera *cam) {
   CDC *texture;
   I64 nm;
   U16 fill_color;
-#ifdef DOOM2
+  if(FramePtr("DOOM2")) {
   StrScan(l->map_name,"MAP%d",&nm);
   if(nm<12)
      texture=GetGrLump("RSKY1");
@@ -1258,7 +1256,7 @@ U0 DrawSkyAndFillHoles(CDC *to_dc,CDoomLevel *l,CDoomCamera *cam) {
      texture=GetGrLump("RSKY2");
   else
      texture=GetGrLump("RSKY3");
-#else
+}else{
   switch(l->episode) {
    case 1:
      texture=GetGrLump("SKY1");
@@ -1273,7 +1271,7 @@ U0 DrawSkyAndFillHoles(CDC *to_dc,CDoomLevel *l,CDoomCamera *cam) {
      texture=GetGrLump("SKY4");
    break;
   }
-#endif
+}
   I64 iy,ix,off=texture->width*cam->angle/pi,tx,ty;
   U16 *to,*from;
   for(iy=0;iy!=GR_HEIGHT;iy+=2) {
@@ -3217,26 +3215,28 @@ U0 CheckPowerupPickup(CDoomLevel *l) {
   I64 old_load_ammo[9],idx,cnt;  
   for(p=head->next;p!=head;p=p->next) {
     if(IsPlayer(p)) {
-       if(IsNetworkGameServer) {
-#ifdef DOOM2
-	cnt=9;
-#else
-	cnt=8;
-#endif
+      if(IsNetworkGameServer) {
+        if(FramePtr("DOOM2")) {
+	  cnt=9;
+        } else {
+	  cnt=8;
+        }
 //Heres the deal,in server ->ammo is the addtional amount to be sent to player
-// ->ammo2 is the amount the client has,if we are a server,swap them,then compute difference
+        // ->ammo2 is the amount the client has,if we are a server,swap them,then compute difference
         for(idx=0;idx!=cnt;idx++) {
-	  old_load_ammo[idx]=p->arsenal[idx].load->ammo; //Ammo to add to the client
-	  p->arsenal[idx].load->ammo=p->arsenal[idx].load->ammo2; //Client total ammo
+	  if(p->arsenal[idx].load) {
+	    old_load_ammo[idx]=0; //Ammo to add to the client
+	    p->arsenal[idx].load->ammo=0; //Client total ammo
+	  }
         }
         _CheckPowerupPickup(l,p);
         for(idx=0;idx!=cnt;idx++) {
 //Make the ->ammo a relative ammount to the old value
-          if(idx!=3&&idx!=7&&idx!=8) {
-	    p->arsenal[idx].load->ammo=
-		(p->arsenal[idx].load->ammo-p->arsenal[idx].load->ammo2) //"new" ammo-client ammo
-		  +old_load_ammo[idx]; //Ammo to add to the client
-	  }
+	  if(p->arsenal[idx].load)
+	    if(idx!=3&&idx!=7&&idx!=8) {
+	      p->arsenal[idx].load->ammo2=
+		    p->arsenal[idx].load->ammo-old_load_ammo[idx];
+	    }
         }
       } else
         _CheckPowerupPickup(l,p);
@@ -3514,96 +3514,96 @@ extern U0 LoadGame(U8 *filename);
 #include "Menu.HC";
 U8 *NextLevel(U8 *nm,Bool special=FALSE) {
   static U8 dumbname[STR_LEN];
-#ifdef DOOM2
-  I64 num;
-  StrScan(nm,"MAP%d",&num);
-  if(num+1<10)
-    StrPrint(dumbname,"MAP0%d",num+1);
-  else
-    StrPrint(dumbname,"MAP%d",num+1);
-  if(special) {
-    if(!StrCmp("MAP14",nm))
-      return "MAP31";
-  }
-  if(num+1<=32 )
-    return dumbname;
-  return NULL;
-#else
+  if(FramePtr("DOOM2")) {
+    I64 num;
+    StrScan(nm,"MAP%d",&num);
+    if(num+1<10)
+      StrPrint(dumbname,"MAP0%d",num+1);
+    else
+      StrPrint(dumbname,"MAP%d",num+1);
+    if(special) {
+      if(!StrCmp("MAP14",nm))
+        return "MAP31";
+    }
+    if(num+1<=32 )
+      return dumbname;
+    return NULL;
+  } else {
 //Episode 1
-  if(!StrCmp(nm,"E1M1")) 
-    return "E1M2";
-  else if(!StrCmp(nm,"E1M2")) 
-    return "E1M3";
-  else if(!StrCmp(nm,"E1M3"))  {
-    if(special) return "E1M9";
-    return "E1M4";
-  }
-  else if(!StrCmp(nm,"E1M4"))
-    return "E1M5";
-  else if(!StrCmp(nm,"E1M5")) 
-    return "E1M6";
-  else if(!StrCmp(nm,"E1M6")) 
-    return "E1M7";
-  else if(!StrCmp(nm,"E1M7")) 
-    return "E1M8";
-  else if(!StrCmp(nm,"E1M9")) 
-    return "E1M5";
+    if(!StrCmp(nm,"E1M1")) 
+      return "E1M2";
+    else if(!StrCmp(nm,"E1M2")) 
+      return "E1M3";
+    else if(!StrCmp(nm,"E1M3"))  {
+      if(special) return "E1M9";
+      return "E1M4";
+    }
+    else if(!StrCmp(nm,"E1M4"))
+      return "E1M5";
+    else if(!StrCmp(nm,"E1M5")) 
+      return "E1M6";
+    else if(!StrCmp(nm,"E1M6")) 
+      return "E1M7";
+    else if(!StrCmp(nm,"E1M7")) 
+      return "E1M8";
+    else if(!StrCmp(nm,"E1M9")) 
+      return "E1M5";
 //Episode 2
-  if(!StrCmp(nm,"E2M1")) 
-    return "E2M2";
-  else if(!StrCmp(nm,"E2M2")) 
-    return "E2M3";
-  else if(!StrCmp(nm,"E2M3")) 
-    return "E2M4";
-  else if(!StrCmp(nm,"E2M4"))
-    return "E2M5";
-  else if(!StrCmp(nm,"E2M5"))  {
-    if(special) return "E2M9";
-    return "E2M6";
-  } else if(!StrCmp(nm,"E2M6")) 
-    return "E2M7";
-  else if(!StrCmp(nm,"E2M7")) 
-    return "E2M8";
-  else if(!StrCmp(nm,"E2M9")) 
-    return "E2M6";
+    if(!StrCmp(nm,"E2M1")) 
+      return "E2M2";
+    else if(!StrCmp(nm,"E2M2")) 
+      return "E2M3";
+    else if(!StrCmp(nm,"E2M3")) 
+      return "E2M4";
+    else if(!StrCmp(nm,"E2M4"))
+      return "E2M5";
+    else if(!StrCmp(nm,"E2M5"))  {
+      if(special) return "E2M9";
+      return "E2M6";
+    } else if(!StrCmp(nm,"E2M6")) 
+      return "E2M7";
+    else if(!StrCmp(nm,"E2M7")) 
+      return "E2M8";
+    else if(!StrCmp(nm,"E2M9")) 
+      return "E2M6";
 //Episode 3
-  if(!StrCmp(nm,"E3M1")) 
-    return "E3M2";
-  else if(!StrCmp(nm,"E3M2")) 
-    return "E3M3";
-  else if(!StrCmp(nm,"E3M3")) 
-    return "E3M4";
-  else if(!StrCmp(nm,"E3M4"))
-    return "E3M5";
-  else if(!StrCmp(nm,"E3M5"))
-    return "E3M6";
-  else if(!StrCmp(nm,"E3M6")) { 
-    if(special) return "E3M9";
-    return "E3M7";
-  } else if(!StrCmp(nm,"E3M7")) 
-    return "E3M8";
-  else if(!StrCmp(nm,"E3M9")) 
-    return "E3M7";
+    if(!StrCmp(nm,"E3M1")) 
+      return "E3M2";
+    else if(!StrCmp(nm,"E3M2")) 
+      return "E3M3";
+    else if(!StrCmp(nm,"E3M3")) 
+      return "E3M4";
+    else if(!StrCmp(nm,"E3M4"))
+      return "E3M5";
+    else if(!StrCmp(nm,"E3M5"))
+      return "E3M6";
+    else if(!StrCmp(nm,"E3M6")) { 
+      if(special) return "E3M9";
+      return "E3M7";
+    } else if(!StrCmp(nm,"E3M7")) 
+      return "E3M8";
+    else if(!StrCmp(nm,"E3M9")) 
+      return "E3M7";
 //Episode 4
-  if(!StrCmp(nm,"E4M1")) 
-    return "E4M2";
-  else if(!StrCmp(nm,"E4M2")) {
-    if(special) return "E4M9";
-    return "E4M3";
-  } else if(!StrCmp(nm,"E4M3")) 
-    return "E4M4";
-  else if(!StrCmp(nm,"E4M4"))
-    return "E4M5";
-  else if(!StrCmp(nm,"E4M5"))
-    return "E4M6";
-  else if(!StrCmp(nm,"E4M6"))
-    return "E4M7";
-  else if(!StrCmp(nm,"E4M7")) 
-    return "E4M8";
-  else if(!StrCmp(nm,"E4M9")) 
-    return "E4M3";
-#endif
-  //Intermission
+    if(!StrCmp(nm,"E4M1")) 
+      return "E4M2";
+    else if(!StrCmp(nm,"E4M2")) {
+      if(special) return "E4M9";
+      return "E4M3";
+    } else if(!StrCmp(nm,"E4M3")) 
+      return "E4M4";
+    else if(!StrCmp(nm,"E4M4"))
+      return "E4M5";
+    else if(!StrCmp(nm,"E4M5"))
+      return "E4M6";
+    else if(!StrCmp(nm,"E4M6"))
+      return "E4M7";
+    else if(!StrCmp(nm,"E4M7")) 
+      return "E4M8";
+    else if(!StrCmp(nm,"E4M9")) 
+      return "E4M3";
+  }
+//Intermission
   return NULL;
 }
 #include"Finale.HC";
@@ -3812,14 +3812,15 @@ ent:;
 	  if(Bt(kbd.down_bitmap,Char2ScanCode('7'))) {
 	    SwapWeapon(p,7);
 	  }
-#ifdef DOOM2
+	if(FramePtr("DOOM2")) {
 	  if(Bt(kbd.down_bitmap,Char2ScanCode('8'))) {
 	    SwapWeapon(p,8);
 	  }
-#endif
+} else{
 	  if(Bt(kbd.down_bitmap,Char2ScanCode('0'))) {
 	    SwapWeapon(p,0);
 	  }
+}
         }
         if(Bt(kbd.down_bitmap,Char2ScanCode(' ')&0xff)) {
 	  ClientPressAWall(l,p);
@@ -3850,7 +3851,7 @@ play_again:
     } else {
 #ifdef __AIWNIOS__
       AIWNIOS_SetCaptureMouse(0);
-#endif
+#endif
       mr=MainMenu;
       if(!mr) {
         Unpause;

@@ -110,7 +110,7 @@ U0 PhysicsOnThing(CDoomLevel *l,CDoomThing *thing) {
 	      break;
 	  }
 	  if(!(ToI64(tS*32)&0x1f)&&damage) {
-	    DamageMob(l,p,NULL,damage);
+	    DamageMob(l,thing,NULL,damage);
 //E1M8 hell exit
 	    if(sec->special_type==11&&p->health<11) {
 	      l->ended=TRUE;

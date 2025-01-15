@@ -795,11 +795,11 @@ U0 InitPosDataForThing(CDoomLevel *l,CDoomThing *t) {
     if(0<=y<l->block_map_rows)
       I64SetAdd(l->block_map_things[y*l->block_map_cols+x],t);
 }
-U0 RemovePosDataForThing(CDoomLevel *l,CDoomThing *t) {
+ U0 RemovePosDataForThing(CDoomLevel *l,CDoomThing *t) {
   CDoomSector *s=GetSectorForCoord(l,t->x,t->y);
   I64 x=ToI64(t->x-l->block_map_x_off)/128,y=ToI64(t->y-l->block_map_y_off)/128;
   if(s) {
-    if(I64SetHas(s->things,t)) {
+     if(I64SetHas(s->things,t)) {
       I64SetRem(s->things,t);
     } else {
 //Fail-safe

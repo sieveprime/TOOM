@@ -272,11 +272,7 @@ U0 SaveGame(U8 *filename,U8 *title) {
   }
   DocPrint(doc,"ARSENAL:\n");
   DocPrint(doc,"EQUIP:%d\n",weaponIndex);
-#ifdef DOOM2
-  for(idx=0;idx!=9;idx++) {
-#else
-  for(idx=0;idx!=8;idx++) {
-#endif
+  for(idx=0;idx!=8+FramePtr("DOOM2");idx++) {
     avail=&p->arsenal[idx];
     DocPrint(doc,"%d\n",avail->available);
     if(avail->load)
@@ -743,11 +739,7 @@ skip_thinker:;
       case 4: //Arsenal
         ptr=StrScan(ptr,"ARSENAL:\n");
         ptr=StrScan(ptr,"EQUIP:%d\n",&weapon);
-#ifdef DOOM2
-        for(idx=0;idx!=9;idx++) {
-#else
-        for(idx=0;idx!=8;idx++) {
-#endif
+        for(idx=0;idx!=8+FramePtr("DOOM2");idx++) {
 	  avail=&p->arsenal[idx];
 	  switch(idx) {
 	    case 0...2:

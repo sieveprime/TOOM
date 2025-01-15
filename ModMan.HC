@@ -1,6 +1,6 @@
 if(FileFind("DOOM2.WAD")) {
-  DefinePrint("DOOM2","TRUE");
   LoadWad("DOOM2.WAD");
+  FramePtrAdd("DOOM2",1);
 } else if(FileFind("DOOM.WAD"))
 {
   LoadWad("DOOM.WAD");

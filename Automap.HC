@@ -8,7 +8,6 @@ class CAutomapState {
 MemSet(&am_state,0,sizeof CAutomapState);
 am_state.follow=TRUE;
 am_state.zoom=1;
-#ifdef DOOM2
 #define HUSTR_1	"level 1: entryway"
 #define HUSTR_2	"level 2: underhalls"
 #define HUSTR_3	"level 3: the gantlet"
@@ -44,7 +43,7 @@ am_state.zoom=1;
 
 #define HUSTR_31	"level 31: wolfenstein"
 #define HUSTR_32	"level 32: grosse"
-#else
+
 #define HUSTR_E1M1	"E1M1: Hangar"
 #define HUSTR_E1M2	"E1M2: Nuclear Plant"
 #define HUSTR_E1M3	"E1M3: Toxin Refinery"
@@ -84,7 +83,6 @@ am_state.zoom=1;
 #define HUSTR_E4M7	"E4M7: And Hell Followed"
 #define HUSTR_E4M8	"E4M8: Unto The Cruel"
 #define HUSTR_E4M9	"E4M9: Fear"
-#endif
 U0 AutomapInteract() {
   static F64 button_delay=0;
   if(Bt(kbd.down_bitmap,Char2ScanCode('\t')))
@@ -136,12 +134,12 @@ U0 DrawAutomap(CDC *dc,CDoomLevel *l) {
   CDoomActionSector *special;
   CDoomThing *t;
   head=&l->linedefs;
-#ifdef DOOM2
-  StrScan(l->map_name,"MAP%d",&mat);
-  StrPrint(buf,"HUSTR_%d",mat);
-#else
-  StrPrint(buf,"HUSTR_%s",l->map_name);
-#endif
+  if(FramePtr("DOOM2")) {
+    StrScan(l->map_name,"MAP%d",&mat);
+    StrPrint(buf,"HUSTR_%d",mat);
+  } else {
+    StrPrint(buf,"HUSTR_%s",l->map_name);
+  }
   title=Define(buf);   
   for(ld=head->next;ld!=head;ld=ld->next) {
     if(!ld->seen&&!all)

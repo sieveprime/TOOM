@@ -1,4 +1,4 @@
-#include "MainDrawer.HC";
+,#include "MainDrawer.HC";
 U64 r;
 CDC *title=GetGrLump("TITLEPIC");
 DocClear;

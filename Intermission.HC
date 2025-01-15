@@ -276,84 +276,80 @@ U0 Intermission(CDoomLevel *lev,I64 ep,I64 l) {
   U8 *next=NextLevel(lev->map_name);
 #ifdef __AIWNIOS__
   AIWNIOS_SetCaptureMouse(0);
-#endif
-#ifndef DOOM2
-  IntermessionLoadData(ep,l);
 #endif
+  if(FramePtr("DOOM2"))
+    IntermessionLoadData(ep,l);
   F64 start_ts=tS;
   FlushMsgs;
   while(state<2) {
-    
-#ifndef DOOM2
-    GrBlot(doom_scrn,0,0,background);
-    DrawAnimatedBackground(doom_scrn,ep,l);
-#else
-    LoadGrLump(wad,"INTERPIC");
-    dc=GetGrLump("INTERPIC");
-    GrBlot(doom_scrn,0,0,dc);
-#endif
+
+    if(FramePtr("DOOM2")) {
+      GrBlot(doom_scrn,0,0,background);
+      DrawAnimatedBackground(doom_scrn,ep,l);
+    } else {
+      LoadGrLump(wad,"INTERPIC");
+      dc=GetGrLump("INTERPIC");
+      GrBlot(doom_scrn,0,0,dc);
+    }
     if(!state) {
       y=TITLEY;
       dc=GetGrLump("WIF");
       GrBlot(doom_scrn,(GR_WIDTH-dc->width)/2,y,dc);
       y+=(5*dc->height)/4;
-#ifndef DOOM2
-      StrPrint(buf,"WILV%d%d",ep,l); //Lvel name
-      LoadGrLump(wad,buf); //Will load once
-      dc=GetGrLump(buf);
-      if(!dc) {
-        StrPrint(buf,"CWILV%d%d",ep,l); //Lvel name,ultimate doom
+      if(!FramePtr("DOOM2")) {
+        StrPrint(buf,"WILV%d%d",ep,l); //Lvel name
         LoadGrLump(wad,buf); //Will load once
         dc=GetGrLump(buf);
-      }
-      GrBlot(doom_scrn,(GR_WIDTH-dc->width)/2,y,dc);
-      DrawSplats(doom_scrn,ep,l);
-#else
+        if(!dc) {
+	  StrPrint(buf,"CWILV%d%d",ep,l); //Lvel name,ultimate doom
+	  LoadGrLump(wad,buf); //Will load once
+	  dc=GetGrLump(buf);
+        }
+        GrBlot(doom_scrn,(GR_WIDTH-dc->width)/2,y,dc);
+        DrawSplats(doom_scrn,ep,l);
+      } else {
 //'MAP'XX (XX is map number(0 indexed))
-      StrPrint(buf,"CWILV%02d",Str2I64(lev->map_name+3)-1); //-1 as levels start from 00(but are named MAP01-MAPXXX)
-      LoadGrLump(wad,buf); //Will load once
-      dc=GetGrLump(buf);
-      GrBlot(doom_scrn,(GR_WIDTH-dc->width)/2,y,dc);
-      y+=(5*dc->height)/4;
-#endif
-
+        StrPrint(buf,"CWILV%02d",Str2I64(lev->map_name+3)-1); //-1 as levels start from 00(but are named MAP01-MAPXXX)
+        LoadGrLump(wad,buf); //Will load once
+        dc=GetGrLump(buf);
+        GrBlot(doom_scrn,(GR_WIDTH-dc->width)/2,y,dc);
+        y+=(5*dc->height)/4;
+      }
     } else {
       y=TITLEY;
       dc=GetGrLump("WIENTER");
       GrBlot(doom_scrn,(GR_WIDTH-dc->width)/2,y,dc);
       y+=(5*dc->height)/4;
-#ifndef DOOM2
-      StrPrint(buf,"WILV%d%d",ep,l+1); //Lvel name
-      LoadGrLump(wad,buf); //Will load once
-      dc=GetGrLump(buf);
-      if(!dc) {
-        StrPrint(buf,"CWILV%d%d",ep,l); //Lvel name,ultimate doom
+      if(!FramePtr("DOOM2"))  {
+        StrPrint(buf,"WILV%d%d",ep,l+1); //Lvel name
         LoadGrLump(wad,buf); //Will load once
         dc=GetGrLump(buf);
-      }
-      if(!dc) return; //??? TODO text intermission
-      GrBlot(doom_scrn,(GR_WIDTH-dc->width)/2,y,dc);
-      DrawStats(doom_scrn,lev,ep,l,(tS-start_ts)*30.);
-#else
-     if(next) {
-//'MAP'XX (XX is map number)
-        StrPrint(buf,"CWILV%02d",Str2I64(lev->map_name+3));
-        LoadGrLump(wad,buf); //Will load once
-        dc=GetGrLump(buf);
+        if(!dc) {
+	  StrPrint(buf,"CWILV%d%d",ep,l); //Lvel name,ultimate doom
+	  LoadGrLump(wad,buf); //Will load once
+	  dc=GetGrLump(buf);
+        }
+        if(!dc) return; //??? TODO text intermission
         GrBlot(doom_scrn,(GR_WIDTH-dc->width)/2,y,dc);
+        DrawStats(doom_scrn,lev,ep,l,(tS-start_ts)*30.);
+      }else {
+        if(next) {
+//'MAP'XX (XX is map number)
+	  StrPrint(buf,"CWILV%02d",Str2I64(lev->map_name+3));
+	  LoadGrLump(wad,buf); //Will load once
+	  dc=GetGrLump(buf);
+	  GrBlot(doom_scrn,(GR_WIDTH-dc->width)/2,y,dc);
+        }
+        DrawStats(doom_scrn,lev,ep,l,(tS-start_ts)*30.);
       }
-      DrawStats(doom_scrn,lev,ep,l,(tS-start_ts)*30.);
-#endif
     }
     while(ScanKey) {
-	FlushMsgs;
-        state++;
+      FlushMsgs;
+      state++;
     }
     GrBlot(,0,0,doom_scrn);
     Refresh;
   }
-#ifdef DOOM2
+  if(!FramePtr("DOOM2"))
     Finale(doom_scrn,Str2I64(lev->map_name+3));
-#endif
 }
-#endif
