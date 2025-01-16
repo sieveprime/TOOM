@@ -57,6 +57,10 @@ U0 AddState(U8 *name,F64 ticks,CDoomAnimationFrame *f,U8 *fptr=NULL,U8 *next=NUL
   s->next_state=next;
   UH(name,s);
   FramePtrAdd(name,s);
+  name=MStrPrint("ANIM.%s",name);
+  FramePtrAdd(name,f);
+  UH(name,f);
+  Free(name);
 }
 
 
@@ -449,7 +453,7 @@ CDoomThing *GetVisiblePlayer(CDoomThing *who) {
       angle=FArg(t->x-who->x,t->y-who->y);
       dist=ApproxDist(t->x-who->x,t->y-who->y);
       dist2=ValidateLineOfSightShot(l,&who->x,angle,dist,who->height+who->template->height,t->height+t->template->height);
-      if(dist<bdist&&dist2<dist) {
+      if(dist<bdist&&(dist2>=dist||dist2<0.)) {
 	nearest=t;
 	bdist=dist;
       }
@@ -825,11 +829,13 @@ Bool LookForPlayers(CDoomLevel *l,CMonsterThinker *t) {
   if(s)
     if(s->noise_thing&&IsPlayer(s->noise_thing)) {
       target=t->target=s->noise_thing;
+PrintI("fart",t);
       return TRUE;
     }
   if(!CanSeeTarget(l,t)) {
 new_target:
     t->target=GetVisiblePlayer(thing);
+PrintI("poo",t);
     return FALSE;
   }
 see:

@@ -15,15 +15,18 @@ CI64Set *I64SetNew() {
   return s;
 }
 Bool I64SetHas(CI64Set *s,I64 v) {
-  I64 i=s->cnt;
-  while(--i>=0)
+  I64 i=0;
+  while(i<s->cnt){
     if(s->body[i]==v)
       return TRUE;
-  return FALSE;
+    if(s->body[i]>v)
+      return FALSE;
+    i++;
+  }
+ return FALSE;
 }
 Bool I64SetAdd(CI64Set *s,I64 v) {
-  if(I64SetHas(s,v)) return FALSE;
-  I64 *new;
+  I64 *new,idx;
   if(s->cnt+1>=s->cap) {
      new=CAlloc(MSize(s->body)+16*8,doom_task);
      s->cap+=16;
@@ -31,15 +34,26 @@ Bool I64SetAdd(CI64Set *s,I64 v) {
      Free(s->body);
      s->body=new;
   }
-  s->body[s->cnt++]=v;
+  for(idx=0;idx!=s->cnt;idx++) {
+    if(s->body[idx]==v) {
+      return FALSE;
+    } else if(s->body[idx]>v) {
+      MemCpy(s->body+idx+1,s->body+idx,(s->cnt-idx)*8);
+      s->body[idx]=v;
+      s->cnt++;
+      return TRUE;
+    }
+  }
+  s->body[s->cnt]=v;
+  s->cnt++;
   return TRUE;
 }
 U0 I64SetRem(CI64Set *s,I64 v) {
   I64 idx,ptr=0,del=0;
   for(idx=0;idx!=s->cnt;idx++) {
-    if(s->body[idx]!=v)
+    if(s->body[idx]!=v) {
       s->body[ptr++]=s->body[idx];
-    else
+    } else
       del++;
   }
   s->cnt-=del;

@@ -939,7 +939,9 @@ nextx:;
 
 
 U0 DrawAThing(CDC *to_dc,CDoomThing *thing,CDoomCamera *cam) {
-  if(!thing->template) return;
+  if(!thing->template) {
+    return;
+  }
   if(thing==p) {return;} //Dont render player
   if(!thing->animation) thing->animation=thing->template->_animation;
   if(!thing->animation)  {
@@ -3288,7 +3290,9 @@ Bool PlayerAttack(F64 shots_per_minute,F64 min_damage,F64 max_damage,F64 range,U
 U0 UpdateLevel(CDoomLevel *l) {
   CDoomPlayer *p,*thead=&l->things;
   if(IsNetworkGameClient) {
-    Physics(l);
+    for(p=thead->next;p!=thead;p=p->next)
+      if(IsPlayer(p))
+        PhysicsOnThing(l,p);
     return;
   }
   CDoomSector *sector,*head=&l->sectors;

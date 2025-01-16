@@ -63,14 +63,14 @@ class CMPConnect:CQue {
 };
 
 
-U16 MPHashThing(CDoomThing *t) {
+I64 MPHashThing(CDoomThing *t) {
   if(!t->template) return 0;
-//All cordnates will be rounded to 8 to avoid sending lots of data,I doubt a player would notice
-  U8 buf[STR_LEN],*tmp;
-  I64 hash=(t->height>>3*67+t->y>>3*5+t->x>>3);
+//>>2 to divide by 4,slightly moved objects will appear in the same spot. I dont think users will notice
+  I64 hash=ToI64(t->height)>>2*42+21*ToI64(t->y)>>2+ToI64(t->x)>>2;
+  U8 *tmp;
   if(tmp=GetUNStr(t->animation))
     hash^=HashStr(tmp);
-  return (hash&0xffff)|1;
+  return hash;
 }
 //This message is for pushing the player when an enemy damages the player
 #define MSG_DAMAGE_PUSH 'DmgPush'
@@ -78,6 +78,7 @@ U16 MPHashThing(CDoomThing *t) {
 #define MSG_WANT_HASH_THINGS 'WantTHsh'
 #define MSG_WANT_THINGS 'WantTngs'
 #define MSG_SEND_THINGS 'SendTngs'
+#define MSG_KEEP_THINGS 'KeepTngs'
 #define MSG_SEND_PLAYER 'CSndPlr' //Client send player
 #define MSG_PLAYER_ATTACK 'PlrAtk'
 #define MSG_PLAYER_MISSILE 'PlrMsl'
@@ -129,8 +130,8 @@ class CServerThing {
   I16 x,y,h;
   I16 angle;
   I16 health;
-  U8 template[24];
-  U8 anim_name[24];
+  U8 template[64];
+  U8 anim_name[64];
   Bool anim_no_repeat;
 };
 class CServerPlayer:CServerThing {
@@ -197,7 +198,7 @@ class CThingsHeader {
 class CHashesHeader {
   U64 ident;
   I64 sz;
-  U16 body[0];
+  U64 body[0];
 };
 class CAskforHeader {
   U64 ident;
@@ -225,7 +226,7 @@ class CPlayerAttack {
   U64 ident;
   I64 sz;
   U0 body;
-  I16 target_hash;
+  I64 target_hash;
   I16 damage;
   I64 fallback_angle;
   F64 range;
@@ -444,12 +445,13 @@ U0 SendThingHashes(CMPConnect *con,CDoomLevel *l) {
   I64 cnt=QueCnt(&l->things),idx,h;
   if(con->player) cnt--;
   CDoomThing *t;
-  CHashesHeader *msg=CAlloc(cnt*sizeof(I16)+sizeof(CHashesHeader));
-  msg->ident=MSG_HASH_THINGS;
-  msg->sz=cnt*2+sizeof(CHashesHeader);
+  CHashesHeader *msg=CAlloc(cnt*8+sizeof(CHashesHeader));
+  msg->ident=MSG_WANT_HASH_THINGS;
+  msg->sz=cnt*8+sizeof(CHashesHeader);
   t=l->things.next;
   for(idx=0;idx!=cnt;idx++) {
     h=MPHashThing(t);
+    t->hash=h;
     if(t!=con->player)
       msg->body[idx]=h;
     t=t->next;
@@ -458,59 +460,157 @@ U0 SendThingHashes(CMPConnect *con,CDoomLevel *l) {
   Free(msg);
 }
 
+U0 SendThings(CMPConnect *con,CDoomLevel *l,CHashesHeader *msg) {
+  I64 cnt;
+  I64 idx,dummy;  
+  U8 *s;
+  CServerThing thing;
+  CDoomThing *dt;
+  CI64Set *have=I64SetNew;
+  CI64Set *send=I64SetNew;
+  CI64Set *to_keep=I64SetNew;
+  CHashesHeader *remove;
+  msg->sz-=sizeof(CHashesHeader);
+  cnt=msg->sz/8;
+  for(idx=0;idx!=cnt;idx++) {
+    I64SetAdd(have,msg->body[idx]);
+  }
+  cnt=0;
+  for(dt=l->things.next;dt!=&l->things;dt=dt->next) {
+    dt->hash=MPHashThing(dt);
+    if(dt!=con->player) {
+      if(!I64SetHas(have,dt->hash)) {
+        I64SetAdd(send,dt);
+        cnt++;
+      } else 
+	I64SetAdd(to_keep,dt->hash);
+    }
+  }
+  remove=CAlloc(sizeof(CHashesHeader)+8*to_keep->cnt);
+  remove->sz=sizeof(CHashesHeader)+8*to_keep->cnt;
+  remove->ident=MSG_KEEP_THINGS;
+  idx=to_keep->cnt;
+  while(--idx>=0) {
+    remove->body[idx]=to_keep->body[idx];
+  }
+  SendMessage(con,remove);
+  Free(remove);
+  CThingsHeader *msg2=CAlloc(sizeof(CThingsHeader)+sizeof(CServerThing)*cnt);
+  msg2->ident=MSG_SEND_THINGS;
+  msg2->sz=sizeof(CServerThing)*cnt+sizeof(CThingsHeader);
+  for(idx=0;idx!=send->cnt;idx++) {
+    dt=send->body[idx];
+    if(dt!=con->player) {
+      MemSet(&thing,0,sizeof(CServerThing));
+      thing.x=dt->x;
+      thing.y=dt->y;
+      thing.h=dt->height;
+      thing.health=dt->health;
+      thing.angle=Wrap(dt->angle)/pi*I16_MAX;
+      thing.anim_start_tS=dt->anim_start_tS;
+      thing.anim_no_repeat=dt->anim_no_repeat;
+      if(s=GetUNStr(dt->template)) StrCpy(thing.template,s);
+      if(!dt->animation) dt->animation=dt->template->animation;
+      if(s=GetUNStr(dt->animation)) {StrCpy(thing.anim_name,s);}
+      else StrCpy(thing.anim_name,"");
+      MemCpy(&msg2->body[idx],&thing,sizeof(CServerThing));
+    }
+  }
+  SendMessage(con,msg2);
+  Free(msg2);
+  I64SetDel(to_keep);
+  I64SetDel(send);
+  I64SetDel(have);
+}
+
+U0 ServerSendPlayerDamagePush(CDoomPlayer *player,F64 angle,F64 force) {
+  if(!IsNetworkGameServer)
+    return;
+  CMPConnect *head=FramePtr("Srv.Connects"),*cur;
+  CPlayerPush pp;
+  for(cur=head->next;cur!=head;cur=cur->next) {
+    if(cur->player==player) {
+      pp.ident=MSG_DAMAGE_PUSH;
+      pp.sz=sizeof(CPlayerPush);
+      pp.angle=angle;
+      pp.force=force;
+      SendMessage(cur,&pp);
+      return;
+    }
+  }
+}
+
+U0 SendPlayerSpawnMissile(CMPConnect *con,CDoomPlayer *p,CD2 *to,CDoomThing *target,U64 type) {
+  CMissileSend mss;
+  mss.ident=MSG_PLAYER_MISSILE;
+  mss.sz=sizeof(CMissileSend);
+  mss.sx=p->x;
+  mss.sy=p->y;
+  if(target)
+    to=&target->x;
+  mss.ex=to->x;
+  mss.ey=to->y;
+  mss.type=type;
+  if(target) mss.target_hash=MPHashThing(target);
+  else mss.target_hash=0;
+ SendMessage(con,&mss);
+}
 //Assumes CHashesHeader was read already
 U0 CompareThingHashes(CMPConnect *con,CDoomLevel *l,CHashesHeader *hd) {
-  I64 me_cnt=QueCnt(&l->things),you_cnt=hd->sz/8;
+  I64 me_cnt=QueCnt(&l->things),you_cnt;
   CDoomThing *t,*t2;
-  I64 idx,h;
+  I64 idx,h,idx2;
   CI64Set *want=I64SetNew,*to_keep=I64SetNew;
-  CI64Set *collisions=I64SetNew;
-  U16 *you_hashes;
+  CI64Set *collisions=I64SetNew,has;
+  U64 *you_hashes;
   CHashesHeader *hashes_msg;
   t=l->things.next;
-  hd->sz-=sizeof(CHashesHeader);
-  for(idx=0;idx!=hd->sz/2;idx++) {
-    I64SetAdd(want,hd->body[idx]);
-  }
   for(idx=0;idx!=me_cnt;idx++) {
     h=MPHashThing(t);
     t->hash=h;
     t=t->next;    
-  }
-  you_hashes=hd->body;
-//Pass 1,check for changes
-  for(idx=0;idx!=hd->sz/2;idx++) {
-    h=you_hashes[idx];
     if(!I64SetAdd(want,h))
       I64SetAdd(collisions,h);
   }
+  hd->sz-=sizeof(CHashesHeader);
+  you_hashes=hd->body;
+  you_cnt=hd->sz/8;
 //Pass 2,remove items that dont appear in you_hashes
-  for(idx=0;idx!=hd->sz/2;idx++) {
-    h=you_hashes[idx];
-    if(I64SetHas(want,h)&&!I64SetHas(collisions,h))
-      I64SetAdd(to_keep,h);
+  for(idx=0;idx!=want->cnt;idx++) {
+    h=want->body[idx];
+    for(idx2=0;idx2!=you_cnt;idx2++)
+     if(h==you_hashes[idx2]&&!I64SetHas(collisions,h)) {
+       I64SetAdd(to_keep,h);
+     }
+next_h:;
   }
-  con->remove_on_receive->cnt=0;
-  t=l->things.next;
-  for(idx=0;idx!=me_cnt;idx++) {
-    t2=t->next;
-    if(!I64SetHas(to_keep,t->hash)) {
-      I64SetAdd(con->remove_on_receive,t);
-    }
-    t=t2;
-  }
-  hashes_msg=CAlloc(want->cnt*2+sizeof(CHashesHeader));
-  hashes_msg->ident=MSG_WANT_THINGS;
-  hashes_msg->sz=want->cnt*2+sizeof(CHashesHeader);
-  for(idx=0;idx!=want->cnt;idx++)
-    hashes_msg->body[idx]=want->body[idx];
-  SendMessage(con,hashes_msg);
-  Free(hashes_msg);
+  hashes_msg=CAlloc(to_keep->cnt*8+sizeof(CHashesHeader));
+  hashes_msg->ident=MSG_SEND_THINGS;
+  hashes_msg->sz=to_keep->cnt*8+sizeof(CHashesHeader);
+  for(idx=0;idx!=to_keep->cnt;idx++)
+    hashes_msg->body[idx]=to_keep->body[idx];
   I64SetDel(want);
   I64SetDel(collisions);
   I64SetDel(to_keep);
+  SendThings(con,l,hashes_msg);
+  Free(hashes_msg);
 }
-
+U0 KeepThings(CMPConnect *con, CDoomLevel *l,CHashesHeader *got) {
+  I64 cnt=(got->sz-sizeof(CHashesHeader))/8;
+  CI64Set *s=I64SetNew;
+  CDoomThing *dt;
+  while(--cnt>=0) {
+    I64SetAdd(s,got->body[cnt]);
+  }
+  con->remove_on_receive->cnt=0;
+  for(dt=l->things.next;dt!=&l->things;dt=dt->next) {
+    dt->hash=MPHashThing(dt);
+    if(!I64SetHas(s,dt->hash)) {
+      I64SetAdd(con->remove_on_receive,dt);
+    }
+  }
+  I64SetDel(s);
+}
 U0 RecieveThings(CMPConnect *con,CDoomLevel *l,CThingsHeader *got) {
   I64 cnt=(got->sz-sizeof(CThingsHeader))/sizeof(CServerThing);
   I64 idx;  
@@ -548,77 +648,6 @@ U0 RecieveThings(CMPConnect *con,CDoomLevel *l,CThingsHeader *got) {
     st++;
   }
   con->flags&=~CONNECTF_WANTS_THINGS;
-}
-U0 SendThings(CMPConnect *con,CDoomLevel *l,CHashesHeader *msg) {
-  I64 cnt;
-  I64 idx,dummy;  
-  U8 *s;
-  CServerThing thing;
-  CDoomThing *dt;
-  CI64Set *want=I64SetNew;
-  dt=l->things.next;
-  cnt=0;
-  for(;dt!=&l->things;dt=dt->next) {
-    if(dt!=con->player)
-      cnt++;
-  }
-  dt=l->things.next;
-  CThingsHeader *msg2=CAlloc(sizeof(CThingsHeader)+sizeof(CServerThing)*cnt);
-  msg2->ident=MSG_SEND_THINGS;
-  msg2->sz=sizeof(CServerThing)*cnt+sizeof(CThingsHeader);
-  idx=0;
-  for(dt;dt!=&l->things;dt=dt->next) {
-    if(dt!=con->player) {
-      thing.x=dt->x;
-      thing.y=dt->y;
-      thing.h=dt->height;
-      thing.health=dt->health;
-      thing.angle=Wrap(dt->angle)/pi*I16_MAX;
-      thing.anim_start_tS=dt->anim_start_tS;
-      thing.anim_no_repeat=dt->anim_no_repeat;
-      if(s=GetUNStr(dt->template)) StrCpy(thing.template,s);
-      if(!dt->animation) dt->animation=dt->template->animation;
-      if(s=GetUNStr(dt->animation)) {StrCpy(thing.anim_name,s);}
-      else StrCpy(thing.anim_name,"");
-      MemCpy(&msg2->body[idx],&thing,sizeof(CServerThing));
-      idx++;
-    }
-  }
-  SendMessage(con,msg2);
-  I64SetDel(want);
-}
-
-U0 ServerSendPlayerDamagePush(CDoomPlayer *player,F64 angle,F64 force) {
-  if(!IsNetworkGameServer)
-    return;
-  CMPConnect *head=FramePtr("Srv.Connects"),*cur;
-  CPlayerPush pp;
-  for(cur=head->next;cur!=head;cur=cur->next) {
-    if(cur->player==player) {
-      pp.ident=MSG_DAMAGE_PUSH;
-      pp.sz=sizeof(CPlayerPush);
-      pp.angle=angle;
-      pp.force=force;
-      SendMessage(cur,&pp);
-      return;
-    }
-  }
-}
-
-U0 SendPlayerSpawnMissile(CMPConnect *con,CDoomPlayer *p,CD2 *to,CDoomThing *target,U64 type) {
-  CMissileSend mss;
-  mss.ident=MSG_PLAYER_MISSILE;
-  mss.sz=sizeof(CMissileSend);
-  mss.sx=p->x;
-  mss.sy=p->y;
-  if(target)
-    to=&target->x;
-  mss.ex=to->x;
-  mss.ey=to->y;
-  mss.type=type;
-  if(target) mss.target_hash=MPHashThing(target);
-  else mss.target_hash=0;
- SendMessage(con,&mss);
 }
 U0 SendPlayerAttack(CMPConnect *con,CDoomLevel *l,CDoomPlayer *p,CDoomThing *tar,F64 damage,F64 range) {
   CPlayerAttack at;
@@ -759,12 +788,11 @@ U0 ReadPlayerUpdateServer(CMPConnect *con,CThingsHeader *hh) {
 
 U0 MPClientSync(CMPConnect *con,CDoomLevel *l) {
   if(con->flags&CONNECTF_WANTS_THINGS) return;
-  CHashesHeader want,*hh;
-  want.ident=MSG_WANT_HASH_THINGS;
-  want.sz=sizeof(CGenericHeader);
+  WorldLock;
   con->flags|=CONNECTF_WANTS_THINGS;
-  SendMessage(con,&want);
+  SendThingHashes(con,l);
   SendPlayerUpdateClient(con,con->player);
+  WorldUnlock;
 }
 U0 ServerExit() {
   CMPConnect *head=FramePtr("Srv.Connects"),*cur,*next;
@@ -801,6 +829,7 @@ U0 ServerReadTask(CMPConnect *connection) {
   F64 angle;
   CD2 dummy;
   while(msg=GetMessage(connection)) {
+    connection->flags|=CONNECTF_BEGUN;
     WorldLock;
     if(msg->ident==MSG_PRESS_A_WALL) {
       dummy.x=msg(CWallPress*)->x;
@@ -811,11 +840,10 @@ U0 ServerReadTask(CMPConnect *connection) {
 wtf:
       DbgPrint("WTF\n");
     } else if(msg->ident==MSG_WANT_HASH_THINGS) {
-      SendThingHashes(connection,l);
+      CompareThingHashes(connection,l,msg);
     } else if(msg->ident==MSG_WANT_THINGS) {
       SendThings(connection,l,msg);
 //Frist message we want is MSG_WANT_THINGS
-      connection->flags|=CONNECTF_BEGUN;
     } else if(msg->ident==MSG_SEND_THINGS) {
       goto wtf;
     } else if(msg->ident==MSG_TRIGGER_LINEDEF) {
@@ -947,7 +975,7 @@ DbgPrint("nw client:\n");
 DbgPrint("game full\n");
       SlimProxClose(who);
     } else {
-     Sleep(1);
+     break;
     }
 pass:;
   }
@@ -1019,6 +1047,7 @@ U0 ClientReadTask(I64) {
   MPClientSync(connect,l); //Initial placement of thigns
   while(msg=GetMessage(connect)) {
     WorldLock;
+again:;
     if(msg->ident==MSG_DAMAGE_PUSH) {
       if(player=connect->player) {
 	player->momx+=msg(CPlayerPush*)->force*Cos(msg(CPlayerPush*)->angle);
@@ -1030,7 +1059,6 @@ U0 ClientReadTask(I64) {
     } else if(msg->ident==MSG_SEND_PLAYER) {
       ReadPlayerUpdateClient(connect,msg);
     } else  if(msg->ident==MSG_HASH_THINGS) {
-        CompareThingHashes(connect,l,msg);
       } else if(msg->ident==MSG_PLAY_SOUND) {
         CSoundHeader *snd=msg;
         DbgPrint("Cleint gxt a sound(%s)\n",snd->name);
@@ -1075,6 +1103,8 @@ U0 ClientReadTask(I64) {
 	        srv_sec->ceil_texture
 	        );
         }
+      } else if(msg->ident==MSG_KEEP_THINGS) {
+        KeepThings(connect,l,msg);
       } else if(msg->ident==MSG_SEND_THINGS) {
         RecieveThings(connect,l,msg);
       } else if(msg->ident==MSG_TELEPORT_PLAYER) {
@@ -1109,7 +1139,7 @@ pass:;
 Bool ClientUpdateTask(CMPConnect *c) {
   while(TRUE) {
     MPClientSync(c,l);
-    Sleep(10);
+    Refresh;
   }
 }
 //
@@ -1138,6 +1168,10 @@ start_game:;
   SendMessage(connect,&what_lvl);
   while(TRUE) {
       msg=GetMessage(connect);
+      if(!msg) {
+        success=FALSE;
+	break;
+      }
       if(msg->ident==MSG_SERVER_WHAT_LEVEL) {
 //TODO load level multiplayer
         base_tS=tS;
@@ -1321,7 +1355,7 @@ again:;
       next_map=dummy;
       goto next_level;
     }
-    Sleep(10);
+    Sleep(33);
   }
   next_map=NextLevel(l->map_name,l->ended_special);
 next_level:;
