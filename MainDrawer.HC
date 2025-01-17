@@ -1249,7 +1249,6 @@ I64 CeilSort(CVisplane *va,CVisplane *vb)  {
 U0 DrawSkyAndFillHoles(CDC *to_dc,CDoomLevel *l,CDoomCamera *cam) {
   CDC *texture;
   I64 nm;
-  U16 fill_color;
   if(FramePtr("DOOM2")) {
   StrScan(l->map_name,"MAP%d",&nm);
   if(nm<12)
@@ -1277,7 +1276,6 @@ U0 DrawSkyAndFillHoles(CDC *to_dc,CDoomLevel *l,CDoomCamera *cam) {
   I64 iy,ix,off=texture->width*cam->angle/pi,tx,ty;
   U16 *to,*from;
   for(iy=0;iy!=GR_HEIGHT;iy+=2) {
-    fill_color=BLACK|BLACK<<8;
     ty=iy/ToF64(GR_HEIGHT)*texture->height;
     if(ty>texture->height-2)
       ty=texture->height-2;
@@ -1285,10 +1283,7 @@ U0 DrawSkyAndFillHoles(CDC *to_dc,CDoomLevel *l,CDoomCamera *cam) {
       to=&to_dc->body[GR_WIDTH-2-ix+iy*to_dc->width_internal];
       if(*to&0xff!=SKY_PIXEL) {
 	if(iy&&*to&0xff==TRANSPARENT) {
-	  fill_color=(to(U8*)-to_dc->width_internal)[0](U16);
-	  *to=fill_color;
           to(U8*)+=to_dc->width_internal;
-	  *to=fill_color;
 	}
         goto skip;
       }
@@ -1302,6 +1297,7 @@ U0 DrawSkyAndFillHoles(CDC *to_dc,CDoomLevel *l,CDoomCamera *cam) {
       from(U8*)+=texture->width_internal;
       to(U8*)+=to_dc->width_internal;
       *to=*from;
+
 skip:;
     }
   }

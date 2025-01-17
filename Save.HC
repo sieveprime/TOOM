@@ -54,18 +54,24 @@ I64 GetSidedefIndex(CDoomLevel *l,U8 *t) {
   return -1;
 }
 //DONT FUCKIN FREE 
-U8 *GetUNStr(U8 *ptr) {
+U8 *GetUNStr(I64 ptr) {
   CHashTable *tab=doom_task->hash_table;
   U8 buf[STR_LEN],*buf_ptr=buf;
   U8 **value,*new_ptr;
   I64 bucket;
   CHashGeneric *tmph,*next;
+  StrPrint(buf,"RUnique.%X",ptr);
+  if(FramePtr(buf,doom_task)) {
+    return FramePtr(buf,doom_task);
+  }
   for(bucket=0;bucket<=tab->mask;bucket++) {
     for(tmph=tab->body[bucket];tmph;tmph=next) {
       next=tmph->next;
       if(tmph->type&HTT_FRAME_PTR&&tmph->user_data0==ptr)
-        if(!StrNCmp("Unique.",tmph->str,7))
+        if(!StrNCmp("Unique.",tmph->str,7)) {
+	  FramePtrAdd(buf,tmph->str,doom_task);
 	  return tmph->str;
+        }
     }
   }
   return NULL;

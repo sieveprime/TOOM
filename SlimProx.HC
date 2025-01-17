@@ -26,7 +26,7 @@
 }
 CTask *slim_prox_task=Fs;
 class CSlimProxSock {
-  I64 proxy;
+  I64 proxy,lock;
   CSlimProxSock *parent;
   union {
     CFifoU8 *read_fifo;
@@ -84,7 +84,9 @@ U0 SlimProxTaskRead(CSlimProxSock *root_sock) {
 	    who=root_sock->children->body[hdr.who];
 	    if(who)
 	     while(cnt>0) {
-	      got=recv(root_sock->proxy,buf,MinI64(cnt,0x100002),0);
+	      got=recv(root_sock->proxy,buf,MinI64(cnt,0x10000*2),0);
+	      if(got<=0)
+		goto fin;
 	      if(got>0) 
 	        cnt-=got;
 	      ptr=buf;
@@ -99,8 +101,14 @@ U0 SlimProxTaskRead(CSlimProxSock *root_sock) {
 	default:
 	break;
       }
-    }
+    } else
+	break;
   }
+fin:;
+  if(ptr=FramePtr("SLIM_PROX_EXIT_CB")) {
+    ExePutS(ptr);
+  }
+  close(got);
 }
 U0 SlimProxTaskWrite(CSlimProxSock *root_sock) {
   I64 cnt=0;
@@ -225,10 +233,11 @@ U0 SlimProxServerAcceptTask(I64) {
   I64 server=FramePtr("ServerSock");
   I64 new,idx;
   I64 *avail=FramePtr("AvailSocks");
+  U8 *tmp;
   CSlimProxHeader hdr;
   while(new=accept(server,NULL,0)) {
     if(new==-1)
-      goto next;
+      break;
     for(idx=0;idx!=0x10;idx++) {
       if(!avail[idx]) {
         avail[idx]=new;
@@ -245,6 +254,11 @@ U0 SlimProxServerAcceptTask(I64) {
 next:
    Sleep(3);
   }
+  if(tmp=FramePtr("SLIM_PROX_EXIT_CB")) {
+    ExePutS(tmp);
+  }
+  close(server);
+  
 }
 U0 SlimProxServerTask(I64 sock,I64 *port=NULL) {
 //No need to lock as we are 21 Savage runnin' on core 0
@@ -252,7 +266,7 @@ U0 SlimProxServerTask(I64 sock,I64 *port=NULL) {
   I64 server_sock,cnt;
   I64 avail_socks[0x10];
   CSlimProxHeader hdr;
-  U8 buf[0x10000*2];
+  U8 buf[0x10000*2],*tmp;
   MemSetI64(avail_socks,NULL,0x10);
   while(use_port<SLIM_PROX_END_PORT) {
     if(!used_ports[use_port])
@@ -276,6 +290,10 @@ fail:;
   while(TRUE) {
     hdr=0;
     cnt=recv(sock,&hdr,sizeof(CSlimProxHeader),0);
+PrintI("cnt",cnt);
+    if(cnt<0) {
+      break;
+    }
     if(hdr.ident==SLIM_PROX_WRITE) {
       if(avail_socks[hdr.who]) {
         while(hdr.size>0) {
@@ -292,6 +310,10 @@ fail:;
     }
     Sleep(3);
   }
+  if(tmp=FramePtr("SLIM_PROX_EXIT_CB")) {
+    ExePutS(tmp);
+  }
+  close(sock);
 }  
 U0 SlimProxClose(I64 sock) {
   if(!FramePtr("SLIM_PROX")) {
@@ -330,8 +352,9 @@ I64 SlimProxReceive(I64 sock,U8 *buf,I64 len,I64 ul) {
   } else
     use_fifo=sp->read_fifo;
   while(FifoU8Cnt(use_fifo)<len) {
-    if(sp->closed)
+    if(sp->closed) {
       return -1;
+    }
     Sleep(3);
   }
   U8 *o=buf;
@@ -348,6 +371,8 @@ I64 SlimProxSend(I64 sock,U8 *buf,I64 len,I64 ul) {
   CFifoU8 *use_fifo;
   U8 *o=buf;
   if(sp->closed) return -1;
+  while(LBts(&sp->lock,1))
+    Yield;
 //Swap read/write for "DUMB"
   if(FramePtr("SLIM_PROX_IS_DUMB")) {
     use_fifo=sp->read_fifo;
@@ -355,10 +380,14 @@ I64 SlimProxSend(I64 sock,U8 *buf,I64 len,I64 ul) {
     use_fifo=sp->write_fifo;
   while(--len>=0) {
     while(!FifoU8Ins(use_fifo,*buf)) {
-      if(sp->closed) return -1;
+      if(sp->closed) {
+        LBtr(&sp->lock,1);
+        return -1;
+      }
       Sleep(3);
     }
     buf++;
   }
+  LBtr(&sp->lock,1);
   return ate;
 }

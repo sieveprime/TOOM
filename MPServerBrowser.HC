@@ -34,7 +34,7 @@ U8 *ReceiveString(I64 sock) {
 U0 ServerIncomingTask(CListClient *cl) {
   U32 len;
   I64 host_at,wad_hash;
-  U8 *body,*_body;
+  U8 *body,*_body,*tmp;
   U8 command[STR_LEN],*ptr,*ptr2;
   CListClient *clients=FramePtr("Clients"),*client;
   while(_body=ReceiveString(cl->socket)) {
@@ -55,7 +55,8 @@ U0 ServerIncomingTask(CListClient *cl) {
       ptr=&cl->host_game_wad;
       ptr2=&cl->host_game_desc;
       body=StrScan(body,"%s(%s):%d\n",&ptr,&ptr2,&wad_hash);
-"WAD:%s\n",ptr;
+      tmp=MStrPrint("RemoveHost(0x%X\n);\n",cl);
+      FramePtrAdd("SLIM_PROX_EXIT_CB",tmp);
       SlimProxServerTask(cl->socket,&cl->host_game_at_port);
       Free(_body);
       return;
@@ -105,10 +106,14 @@ class CHostGameData {
   U8 desc[STR_LEN] format "$$DA-P,A=\"Desciption:%s\"$$\n";
   I64 wad_hash;
 };
+U0 RemoveHost(CListClient *cl) {
+  QueRem(cl);
+  Free(cl);
+}
 U0 HostGame(I64 sock) {
   CHostGameData data;
   CTask *me;
-  U8 *map;
+  U8 *map,*tmp;
   if(!FramePtr("USE_WAD")) {
     PopUpOk("Can't find a Doom WAD to use!!\n");
     throw('Wad');

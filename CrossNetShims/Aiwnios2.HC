@@ -27,12 +27,17 @@ I64 AiwniosAccept(CAiwniosSock *_s,sockaddr *src_addr,I64 addr_len) {
   I64 s=_s->os_sock;
   I64 code;
   CAiwniosSock *sock;
+again:;
   if(NetPollForRead(1,&s)==0) {
     code=NetAccept(s,NULL);
     sock=AiwniosSocket(0,0);
     sock->os_sock=code;
-  } else
-    sock=-1;
+  } else {
+    if(NetPollForHangup(1,&s)==0)
+       return -1;
+    Sleep(3);
+    goto again;
+  }
   return sock;
 }
 I64 AiwniosClose(CAiwniosSock *_s) {
@@ -71,6 +76,8 @@ I64 AiwniosRecvFrom(CAiwniosSock *_s,U8 *buf,I64 len,I64 flags,sockaddr *ul,I64 
     Sleep(3);
   };
   I64 r=NetRead(s,buf,len);
+  if(len&&!r)
+    r=-1;
   return r;
 }
 I64 AiwniosSendTo(CAiwniosSock* _s, U8* buf, I64 len, I64 flags, sockaddr* dest_addr, I64 addrlen) {

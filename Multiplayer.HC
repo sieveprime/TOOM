@@ -70,7 +70,7 @@ I64 MPHashThing(CDoomThing *t) {
   U8 *tmp;
   if(tmp=GetUNStr(t->animation))
     hash^=HashStr(tmp);
-  return hash;
+  return hash&U32_MAX;
 }
 //This message is for pushing the player when an enemy damages the player
 #define MSG_DAMAGE_PUSH 'DmgPush'
@@ -181,7 +181,7 @@ class CPickupHeader {
   U64 ident;
   I64 sz;
   U0 body;
-  I64 thing_hash;
+  U32 thing_hash;
 };
 class CSoundHeader {
   U64 ident;
@@ -198,7 +198,7 @@ class CThingsHeader {
 class CHashesHeader {
   U64 ident;
   I64 sz;
-  U64 body[0];
+  U32 body[0];
 };
 class CAskforHeader {
   U64 ident;
@@ -226,7 +226,7 @@ class CPlayerAttack {
   U64 ident;
   I64 sz;
   U0 body;
-  I64 target_hash;
+  U32 target_hash;
   I16 damage;
   I64 fallback_angle;
   F64 range;
@@ -260,16 +260,13 @@ CGenericHeader *GetMessage(CMPConnect *con) {
   CArcCompress head,*b1;
   CGenericHeader *b2;
   if(-1==SlimProxReceive(con->sock,&head,sizeof (CArcCompress),0)) {
-     return NULL;
+    return NULL;
   }
   b1=CAlloc(head.compressed_size+sizeof(CArcCompress));
   MemCpy(b1,&head,sizeof CArcCompress);
-  if(-1==SlimProxReceive(con->sock,b1+1,head.compressed_size-sizeof(CArcCompress),0)) {
-    Free(b1);
-    return NULL;
-  }
-  b2=ExpandBuf(b1,Fs);
-  Free(b1);
+  SlimProxReceive(con->sock,b1+1,b1->compressed_size-sizeof(CArcCompress),0);
+  b2=ExpandBuf(b1);
+  Free(b1); 
   return b2;
 }
 
@@ -445,9 +442,9 @@ U0 SendThingHashes(CMPConnect *con,CDoomLevel *l) {
   I64 cnt=QueCnt(&l->things),idx,h;
   if(con->player) cnt--;
   CDoomThing *t;
-  CHashesHeader *msg=CAlloc(cnt*8+sizeof(CHashesHeader));
+  CHashesHeader *msg=CAlloc(cnt*4+sizeof(CHashesHeader));
   msg->ident=MSG_WANT_HASH_THINGS;
-  msg->sz=cnt*8+sizeof(CHashesHeader);
+  msg->sz=cnt*4+sizeof(CHashesHeader);
   t=l->things.next;
   for(idx=0;idx!=cnt;idx++) {
     h=MPHashThing(t);
@@ -486,8 +483,8 @@ U0 SendThings(CMPConnect *con,CDoomLevel *l,CHashesHeader *msg) {
 	I64SetAdd(to_keep,dt->hash);
     }
   }
-  remove=CAlloc(sizeof(CHashesHeader)+8*to_keep->cnt);
-  remove->sz=sizeof(CHashesHeader)+8*to_keep->cnt;
+  remove=CAlloc(sizeof(CHashesHeader)+4*to_keep->cnt);
+  remove->sz=sizeof(CHashesHeader)+4*to_keep->cnt;
   remove->ident=MSG_KEEP_THINGS;
   idx=to_keep->cnt;
   while(--idx>=0) {
@@ -584,9 +581,9 @@ U0 CompareThingHashes(CMPConnect *con,CDoomLevel *l,CHashesHeader *hd) {
      }
 next_h:;
   }
-  hashes_msg=CAlloc(to_keep->cnt*8+sizeof(CHashesHeader));
+  hashes_msg=CAlloc(to_keep->cnt*4+sizeof(CHashesHeader));
   hashes_msg->ident=MSG_SEND_THINGS;
-  hashes_msg->sz=to_keep->cnt*8+sizeof(CHashesHeader);
+  hashes_msg->sz=to_keep->cnt*4+sizeof(CHashesHeader);
   for(idx=0;idx!=to_keep->cnt;idx++)
     hashes_msg->body[idx]=to_keep->body[idx];
   I64SetDel(want);
@@ -596,7 +593,7 @@ next_h:;
   Free(hashes_msg);
 }
 U0 KeepThings(CMPConnect *con, CDoomLevel *l,CHashesHeader *got) {
-  I64 cnt=(got->sz-sizeof(CHashesHeader))/8;
+  I64 cnt=(got->sz-sizeof(CHashesHeader))/4;
   CI64Set *s=I64SetNew;
   CDoomThing *dt;
   while(--cnt>=0) {
@@ -1168,6 +1165,7 @@ start_game:;
   SendMessage(connect,&what_lvl);
   while(TRUE) {
       msg=GetMessage(connect);
+PrintI("client",msg);
       if(!msg) {
         success=FALSE;
 	break;
@@ -1177,7 +1175,6 @@ start_game:;
         base_tS=tS;
         time_offset=msg->server_tS;
 	if(l=LoadWadLevel(msg->map_name,msg->skill)) {
-
   	  DbgPrint("Server is on map %s skill %d\n",msg->map_name,msg->skill);
 	  if(oldl) FreeLevel(oldl);
           QueDel(&l->things);
