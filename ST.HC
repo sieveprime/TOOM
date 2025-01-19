@@ -446,17 +446,29 @@ U0 ST_refreshBackground(CDoomPlayer *p)
 
 U0 ST_refresh(CDoomPlayer *p)
 {
+  U8 *got;
+  I64 y=5;
   ST_refreshBackground(p);
-  if(*p->message) {
-    DoomPrint(doom_scrn,4,5,p->message);
-    if(Server_tS>p->message_end_tS)
-      *p->message=0;
+  CFifoI64 shadow;
+  MemCpy(&shadow,p->messages,sizeof CFifoI64);
+  while(FifoI64Rem(&shadow,&got)) {
+    DoomPrint(doom_scrn,4,y,got);
+    y+=13;
+  }
+  if(Server_tS>p->message_end_tS) {
+    if(FifoI64Rem(p->messages,&got)) {
+      Free(got);
+      p->message_end_tS=Server_tS+1.5;
+    }
   }
 }
 
 U0 ST_Message(CDoomPlayer *p,U8 *msg) {
-  StrCpy(p->message,msg);
-  p->message_end_tS=Server_tS+2.5;
+  msg=StrNew(msg);
+  if(FifoI64Ins(p->messages,msg)) {
+    p->message_end_tS=Server_tS+1.5;
+  } else
+    Free(msg);
 }
 
 U0 InitWidgets()

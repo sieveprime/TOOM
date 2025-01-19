@@ -1,7 +1,7 @@
 #exe {Cd(__DIR__);};;
 #include "MainDrawer.HC";
 U0 PrintI(U8 *s,I64 l) {
-DbgPrint("%s:%d\n",s,l);
+  DbgPrint("%s:%d\n",s,l);
 }
 #define GAME_LIST_PORT 7000
 

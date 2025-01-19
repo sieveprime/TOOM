@@ -25,6 +25,7 @@ CDoomPlayer *PlayerNew(CDoomLevel *l) {
   U16 gunsInit=0;
   CDoomPlayer *p=CAlloc(sizeof(CDoomPlayer),doom_task);
   QueIns(p,&l->things);
+  p->messages=FifoI64New(0x8,doom_task);
   p->template=doom_thing_types[1];
   p->flags|=TF_SHOOTABLE;
   p->health=100;

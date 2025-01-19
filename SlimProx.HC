@@ -101,6 +101,7 @@ U0 SlimProxTaskRead(CSlimProxSock *root_sock) {
         }
 	break;
 	default:
+	goto fin;
 	break;
       }
     } else
@@ -110,7 +111,6 @@ fin:;
   if(ptr=FramePtr("SLIM_PROX_EXIT_CB")) {
     ExePutS(ptr);
   }
-  close(got);
 }
 U0 SlimProxTaskWrite(CSlimProxSock *root_sock) {
   I64 cnt=0;
@@ -218,6 +218,7 @@ U0 SlimProxServerReadTask(I64 sock) {
       hdr.ident=SLIM_PROX_WRITE;
       hdr.size=cnt;
       hdr.who=idx;
+      send(who,&hdr,sizeof(CSlimProxHeader),0);
       if(cnt) send(who,buf,cnt,0);
     } else
       Sleep(3);
@@ -311,6 +312,7 @@ fail:;
   if(tmp=FramePtr("SLIM_PROX_EXIT_CB")) {
     ExePutS(tmp);
   }
+Beep(10);
   close(server_sock);
   close(sock);
 }  

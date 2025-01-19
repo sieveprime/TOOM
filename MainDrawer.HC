@@ -128,7 +128,6 @@ class CDoomPlayer:CDoomThing {
   GunAvail arsenal[9];
   Bool moving,side_moving;
   Bool running,made_a_sound,has_backpack,pad[3];
-  U8 message[STR_LEN];
 //Private
 #define WEAPON_IDLE 0
 #define WEAPON_FIRE 1
@@ -136,6 +135,7 @@ class CDoomPlayer:CDoomThing {
 #define WEAPON_PAUSE 3
   I64 weapon_state;
   F64 weapon_cooldown,message_end_tS,light_goggles_time,invincible_time;
+  CFifoI64 *messages;
 } *p=NULL;
 
 //IMPORTANT
@@ -3548,6 +3548,7 @@ U8 *NextLevel(U8 *nm,Bool special=FALSE) {
   return NULL;
 }
 #include"Finale.HC";
+extern Bool MPTalk(CDC *,U8 *connection);
 U0 PlayLevel(Bool init=TRUE) { 
   MsSet(GR_WIDTH/2,GR_HEIGHT/2);
   WinBorder;
@@ -3558,6 +3559,7 @@ U0 PlayLevel(Bool init=TRUE) {
   Bool old_side_moving;
   CDoomThing *t,*head;
   U8 *next_lvl;
+  Bool talk_active=FALSE;
   F64 move_angle,move_angle_side;
   F64 move_mag,move_mag_side;
   CDC *new,*old;
@@ -3626,6 +3628,10 @@ ent:;
     UpdateCameraFromPlayer(&cam,p);
     DrawDoomWorld(&cam,l,doom_scrn);
 
+    if(talk_active&&IsNetworkGameClient) {
+      talk_active=MPTalk(doom_scrn,FramePtr("Client.Connect"));
+      goto end_control;
+    }
     if(!paused) {
       AutomapInteract;
 
@@ -3763,6 +3769,9 @@ ent:;
 	  }
 }
         }
+        if(Bt(kbd.down_bitmap,Char2ScanCode('t')&0xff)) {
+	  talk_active=TRUE;
+        }
         if(Bt(kbd.down_bitmap,Char2ScanCode(' ')&0xff)) {
 	  ClientPressAWall(l,p);
         }
@@ -3798,7 +3807,7 @@ play_again:
         Unpause;
       }
     }
-
+end_control:;
     if(!paused||IsNetworkGameClient) {
       UpdateLevel(l);
     }

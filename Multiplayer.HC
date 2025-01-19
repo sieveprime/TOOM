@@ -98,6 +98,10 @@ I64 MPHashThing(CDoomThing *t) {
 #define MSG_WORLD_SECTOR_HASHES 'SctrHshs'
 #define MSG_WORLD_SEND_SECTORS 'SndSctrs'
 
+//CSTMessageHeader
+#define MSG_SAY_SOMETHING 'SaySmth'
+
+
 //See CMPConnect.last_known_linedefs/sectors
 #define MSG_WORLD_SIDEDEF_HASHES 'SdHshs'
 #define MSG_WORLD_SEND_SIDEDEFS 'SndSds'
@@ -259,9 +263,11 @@ U0 SendMessage(CMPConnect *con,CGenericHeader *msg) {
 CGenericHeader *GetMessage(CMPConnect *con) {
   CArcCompress head,*b1;
   CGenericHeader *b2;
-  if(-1==SlimProxReceive(con->sock,&head,sizeof (CArcCompress),0)) {
+  if(sizeof(CArcCompress)!=SlimProxReceive(con->sock,&head,sizeof (CArcCompress),0)) {
     return NULL;
   }
+  if(head.compressed_size>0x40000)
+    return NULL;
   b1=CAlloc(head.compressed_size+sizeof(CArcCompress));
   MemCpy(b1,&head,sizeof CArcCompress);
   SlimProxReceive(con->sock,b1+1,b1->compressed_size-sizeof(CArcCompress),0);
@@ -669,6 +675,7 @@ U0 SendPlayerUpdateServer(CMPConnect *con,CDoomPlayer *p) {
   CServerPlayer *sp;
   CSTMessageHeader st_msg;
   I64 idx,more;
+  U8 *got;
   hdr->sz=sizeof(CThingsHeader)+sizeof(CServerPlayer);
   hdr->ident=MSG_SEND_PLAYER;
   sp=&hdr->body;
@@ -697,12 +704,12 @@ U0 SendPlayerUpdateServer(CMPConnect *con,CDoomPlayer *p) {
   }
 
   SendMessage(con,hdr);
-  if(p->message[0]) {
+  while(FifoI64Rem(p->messages,&got)) {
     st_msg.ident=MSG_ST_MESSAGE;
     st_msg.sz=sizeof(CSTMessageHeader);
-    StrCpy(st_msg.msg,p->message);
-    StrCpy(p->message,"");
+    StrCpy(st_msg.msg,got);
     SendMessage(con,&st_msg);
+    Free(got);
   }
   Free(hdr);
 }
@@ -828,7 +835,13 @@ U0 ServerReadTask(CMPConnect *connection) {
   while(msg=GetMessage(connection)) {
     connection->flags|=CONNECTF_BEGUN;
     WorldLock;
-    if(msg->ident==MSG_PRESS_A_WALL) {
+    if(msg->ident==MSG_SAY_SOMETHING) {
+      msg->ident=MSG_ST_MESSAGE;
+      for(next_con=connects->next;next_con!=connects;next_con=next_con->next) {
+	if(next_con!=connection)
+          SendMessage(next_con,msg);
+      }
+    } else if(msg->ident==MSG_PRESS_A_WALL) {
       dummy.x=msg(CWallPress*)->x;
       dummy.y=msg(CWallPress*)->y;
       angle=ToF64(msg(CWallPress*)->angle)/I16_MAX*pi;     
@@ -1389,5 +1402,45 @@ again:;
     PlayLevel(FALSE);
     goto again;
   }
+}
+//Returns true if consumes controls
+Bool MPTalk(CDC *dc,CMPConnect *con) {
+  static U8 say[STR_LEN];
+  static I64 init=0;
+  if(!init) {
+    init=1;
+    StrCpy(say,"");
+  } 
+  CSTMessageHeader hdr;
+  MemSet(&hdr,0,sizeof(CSTMessageHeader));
+  hdr.ident=MSG_SAY_SOMETHING;
+  hdr.sz=sizeof(CSTMessageHeader);
+  I64 l;
+  I64 m1,m2;
+  while(ScanKey(&m1,&m2)) {
+    if(m1==CH_BACKSPACE) {
+      if(l=StrLen(say)) {
+	say[l-1]=0;
+      }
+    } else if(m1=='\n') {
+      if(l=StrLen(say)) {
+	StrCpy(hdr.msg,say);
+        SendMessage(con,&hdr);
+	StrCpy(hdr.msg,"");
+      }
+      return  FALSE;
+    } else if(m1==CH_ESC) {
+      StrCpy(say,"");
+      return FALSE;
+    } else if(Bt(char_bmp_displayable,m1)) {
+      if(StrLen(say)<STR_LEN-1)
+        CatPrint(say,"%c",m1);
+    }
+  }
+  if(Blink)
+    DoomPrint(dc,10,dc->height-80,"Say: %s_",say);
+  else
+    DoomPrint(dc,10,dc->height-80,"Say: %s",say);
+  return TRUE;
 }
 #endif
