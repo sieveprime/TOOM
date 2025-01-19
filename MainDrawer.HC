@@ -1,4 +1,3 @@
-#define mp_cnt 1
 #define DOOM_MAIN "Doom" 
 #exe {Cd(__DIR__);};;
 #ifndef PrintI 
@@ -15,6 +14,13 @@ CDC *doom_scrn=DCNew(GR_WIDTH,GR_HEIGHT);
 doom_scrn->flags|=DCF_NO_TRANSPARENTS;
 extern U0 PlaySound(U8 *name);
 CTask *doom_task=Fs;
+I64 FrameCnt(CDC **arr) {
+  I64 i=0;
+  while(i<4&&arr[i])
+    i++;
+  return i;
+}
+
 #include "ScreenMelt.HC"
 #include "Serialize.HC";
 #include "FastTrig.HC";
@@ -144,8 +150,6 @@ class CVisplane {
   I64 fminy,fmaxy; //floor
   I64 cminy,cmaxy; //ceil
   CDoomSector *sector;
-//Farthest are per x
-  I32 sector_limits[GR_WIDTH/2]; 
 };
 
 class CDoomCamera {
@@ -153,40 +157,14 @@ class CDoomCamera {
   F64 angle,fov;
 //Private
   CDC *floor_dc; //This is black or white,this is used for reducing floor overdraw
-  I64 visplane_cnt;
   CI64Set *draw_walls;
-  CVisplane visplanes[256];
   F64 cutoff_dists[GR_WIDTH/2];
   F64 min_ceils[GR_WIDTH/2];
   F64 max_floors[GR_WIDTH/2];
-  F64 max_cutoff_per_core[mp_cnt];
   I64 seg_cnts_per_core[mp_cnt]; //Only draw 128 segs per core
 } cam;
 cam.fov=pi/4;
 cam.draw_walls=I64SetNew;
-
-
-U0 InsertVisplane(CDoomCamera *cam,CDoomSector *s) {
-  I64 cnt=cam->visplane_cnt;
-  CVisplane *vp;
-  if(Gs->num) return;
-  if(cnt<255) {
-    vp=&cam->visplanes[cnt];
-    vp->fminx=GR_WIDTH;
-    vp->fminy=GR_HEIGHT;
-    vp->fmaxy=0;
-    vp->fmaxx=0;
-    vp->cminx=GR_WIDTH;
-    vp->cminy=GR_HEIGHT;
-    vp->cmaxy=0;
-    vp->cmaxx=0;
-    vp->sector=s;
-    vp->color=cnt+1;
-    s->visplane_idx=cnt;
-    cam->visplane_cnt++;
-    MemSetU32(vp->sector_limits,I32_MAX,GR_WIDTH/2);
-  }
-}
 #define GRID_SZ  128
 #define Y_SCALE 5
 #define DIST_SCALE (GR_HEIGHT*1.4)
@@ -376,34 +354,21 @@ I64 class CLine64 {
 I64 LineYSort(CLine64 a,CLine64 b) {
   return a.ey-b.ey;
 }
-U0 SectorPlot(CDC *dc,CDC *texture,I64 x,I64 y,F64 level,F64 cos2,F64 sin2,I64 light,Bool god_mode) {
+U0 SectorPlot(CDC *dc,CDC *texture,I64 x,I64 y,I64 idist,I64 wx,I64 wy,I64 light,Bool god_mode) {
   x=GR_WIDTH-x;
-  if(x<0) return;
-  if(x>GR_WIDTH-2) return;
-  if(y<0) return;
-  if(y>GR_HEIGHT-2) return;
   U16 *to=&dc->body[x+y*dc->width_internal];
   I32 *db_z=&dc->depth_buf[x+y*dc->width_internal];
-  if(AbsI64(y-GR_HEIGHT/2)<=1) return;
-  F64 dist=DIST_SCALE/((ToF64(y)-GR_HEIGHT/2)/(cam.h-level));
-  F64 cos=ray_cast_table_cos[x>>1];
-  dist/=cos;
-  I32 idist=dist;
-  I64 wx,wy,color;
-  if(*db_z<idist) return;
+  if(*db_z<idist-3) return;
 //Heres the deal. The dither pixels are always aligned to 2 mofo.
     //So that means I can write an I64 as two I32s into the depth buffer mofo at once
   idist|=idist<<32;
   db_z[0](I64)=idist;
   db_z+=dc->width_internal;
   db_z[0](I64)=idist;
-//End of legendary code
-  wx=cam.x+dist*cos2;
-  wy=cam.y+dist*sin2;
 //wx<<1 multiples by 2,which means any number*2 is even
   wx=(wx<<1)&127;
   wy=(wy<<1)&127;
-  color=LookupLighting(texture->body[wx+wy*128](U16),light,dist,god_mode);
+  U64 color=LookupLighting(texture->body[wx+wy*128](U16),light,idist&U32_MAX,god_mode);
   *to=color&0xffff;
   to(U8*)+=dc->width_internal;
   *to=color>>16;
@@ -411,6 +376,7 @@ U0 SectorPlot(CDC *dc,CDC *texture,I64 x,I64 y,F64 level,F64 cos2,F64 sin2,I64 l
 U0 FillPoly(CDC *dc,CDoomCamera *cam,CDoomSector *s,CDC *texture,CD4 *points,I64 cnt,F64 level,Bool floor) {
   Bool god_mode=GodModeFilter;
   I64 idx,idx2,idx3;
+  I64 af=Server_tS*4;
   CI64Set *lines=I64SetNew();
   I64 minx,x,miny;
   I64 maxx,cap;
@@ -454,8 +420,8 @@ U0 FillPoly(CDC *dc,CDoomCamera *cam,CDoomSector *s,CDC *texture,CD4 *points,I64
 
   minx=minx&~1; //Avoids Templeos bug with &=~1;
 
-  minx=ClampI64(minx,GR_WIDTH/mp_cnt*Gs->num,GR_WIDTH/mp_cnt*(Gs->num+1));
-  maxx=ClampI64(maxx,GR_WIDTH/mp_cnt*Gs->num,GR_WIDTH/mp_cnt*(Gs->num+1));
+  minx=ClampI64(minx,GR_WIDTH/mp_cnt*Gs->num+2,GR_WIDTH/mp_cnt*(Gs->num+1)-2);
+  maxx=ClampI64(maxx,GR_WIDTH/mp_cnt*Gs->num+2,GR_WIDTH/mp_cnt*(Gs->num+1)-2);
 
   for(x=minx-2;x<maxx+2;x+=2) {
     idx3=0;
@@ -474,36 +440,51 @@ skip:;
       dummyb.x=x;
       dummya.y=scrn_points[idx2];
       dummyb.y=scrn_points[idx2+1];
-//In floors,the lower cordante is the nearest(idx2+1)
-      if(floor) {
-        dist=DIST_SCALE/((dummyb.y-GR_HEIGHT/2)/(cam->h-level));
-        dist/=ray_cast_table_cos[ToI64(x)>>1];
-      } else {
-//In ceils,the upper cordante is the nearest(idx2+0)
-        dist=DIST_SCALE/((dummya.y-GR_HEIGHT/2)/(cam->h-level));
-        dist/=ray_cast_table_cos[ToI64(x)>>1];
-      }
-      dist=DIST_SCALE/(((dummya.y+dummyb.y)/2-GR_HEIGHT/2)/(cam->h-level));
-      if(dist>0.) {
-        dist/=ray_cast_table_cos[ToI64(x)>>1];
-        wyf=cam->y+dist*sin_table[ToI64(x)];
-        wxf=cam->x+dist*cos_table[ToI64(x)];
-        if(GetSectorForCoord(l,wxf,wyf)==s) {
+
+      dist=DIST_SCALE/(ToF64((dummya.y+dummyb.y)/2-GR_HEIGHT/2)/(cam->h-level));
+      dist/=ray_cast_table_cos[ToI64(x)>>1];
+      wyf=cam->y+dist*sin_table[ToI64(x)];
+      wxf=cam->x+dist*cos_table[ToI64(x)];
+
+      if(s=GetSectorForCoord(l,wxf,wyf)) {
+        if((floor&&s->floor_height==level)||(!floor&&s->ceil_height==level)) {
 	  y=MinI64(dummya.y,dummyb.y);
 	  cap=MaxI64(dummya.y,dummyb.y);
 	  y=ToI64(y)&~1;
 	  cap=ToI64(cap)&~1;
 	  y=ClampI64(y-4,0,GR_HEIGHT-2);
 	  cap=ClampI64(cap+4,0,GR_HEIGHT-2);
-	  for(;y<cap;y+=2) {
-            if(cam->cutoff_dists[ToI64(x)>>1]<dist)
-              goto next;
-	    SectorPlot(dc,texture,x,y,
-		  level,
-		  cos_table[x],
-		  sin_table[x],
+	  if(floor) {
+	    y=MaxI64(GR_HEIGHT/2,y);
+	    cap=MaxI64(GR_HEIGHT/2,cap);
+	  } else {
+	    y=MinI64(GR_HEIGHT/2,y);
+	    cap=MinI64(GR_HEIGHT/2,cap);
+	  }
+	  for(;y<=cap;y+=2) {
+	    dist=DIST_SCALE/(ToF64(y-GR_HEIGHT/2)/(cam->h-level));
+            dist/=ray_cast_table_cos[ToI64(x)>>1];
+            wyf=cam->y+dist*sin_table[ToI64(x)];
+            wxf=cam->x+dist*cos_table[ToI64(x)];
+	    s=GetSectorForCoord(l,wxf,wyf);
+	    if(dist>0.01) {
+	    if(floor) {
+	      texture=s->floor_dc[af%FrameCnt(s->floor_dc)];
+	      if(s->floor_height==level) {
+pass:;
+	      SectorPlot(dc,texture,x,y,
+		  dist,
+		  wxf,
+		  wyf,
 		  s->cur_light_level,
 		  god_mode);
+	      }
+	    } else if(!floor) {
+	      texture=s->ceil_dc[af%FrameCnt(s->ceil_dc)];
+	      if(s->ceil_height==level)
+		goto pass;
+	    }
+	   }
 	  }
         }
       }
@@ -659,60 +640,22 @@ Bool RayCastWall(CDC *to_dc,CDC *texture,CD2 *st,CD2 *en,CDoomCamera *cam,I64 le
       if(texture->flags&DCF_NO_TRANSPARENTS) {
 //Middle walls cut off rendering
         if(floor==1) { //Solid wall
-//2x2 dithering super pixels
 	  cutoff_changed=TRUE;
+//2x2 dithering super pixels
 	  cam->cutoff_dists[ix>>1]=dist;
         }
       }
-      if(ih&1) ih++;
-      if(iy&1) ih++,iy--;
+      if(ih&1) ih--;
+      if(iy&1) iy--;
+      ih+=8;
+      iy-=4;
+      
 //Avoids Templeos bug with &=~1;
       iy=iy&~1;
       ih=ih&~1;
       ih2=ih;
       ratio=height/ToF64(ih);
       if(floor==3) { //If a "visplane" draw
-        if(0<=ix<=GR_WIDTH-2) {
-	  vp=&cam->visplanes[sd->sector->visplane_idx];
-	  if(vp->sector_limits[ix>>1]<idist||vp->sector_limits[ix>>1]==I32_MAX)
-	    vp->sector_limits[ix>>1]=idist;
-	  for(ty=0;ty!=2;ty++) {
-	    if(!ty)
-	      ih2=0;
-	    else
-	      ih2=ih;
-	    xoff=ClampI64(ix,0,GR_WIDTH-2);
-	    yoff=ClampI64(iy+ih2,1,GR_HEIGHT-2);
-	    if(ty) { //Y grows down
-//If our line is partialy behind the camera,we draw the floor from GR_HEIGHT
-	      if(clipped)
-	        vp->fmaxy=GR_HEIGHT;
-	      if(xoff<vp->fminx)
-	        vp->fminx=xoff;
-	      if(xoff>vp->fmaxx)
-	        vp->fmaxx=xoff;
-
-	      if(yoff<vp->fminy)
-	        vp->fminy=yoff;
-	      if(yoff>vp->fmaxy)
-	        vp->fmaxy=yoff;
-
-	    } else {
-//If our line is partialy behind the camera,we draw the ceil from 0
-	      if(clipped)
-	        vp->cminy=0;
-	      if(xoff<vp->cminx)
-	        vp->cminx=xoff;
-	      if(xoff>vp->cmaxx)
-	        vp->cmaxx=xoff;
-
-	      if(yoff<vp->cminy)
-	        vp->cminy=yoff;
-	      if(yoff>vp->cmaxy)
-	        vp->cmaxy=yoff;
-	    }
-	  }
-        }
         goto next;
       }
       if(0<=ix<=GR_WIDTH-2) {
@@ -810,19 +753,12 @@ skip_p:;
     }
 next:;
   }
-  sd->sector->drawn=TRUE;
-  if(cutoff_changed) {
-    ix=0,ex=GR_WIDTH;
-    dist=0;
-    ix=GR_WIDTH/mp_cnt*Gs->num,ex=GR_WIDTH/mp_cnt*(1+Gs->num);
-//+1/-1 for off-by-1 margins
-    for(ix=ix>>1+1;ix<ex>>1-1;ix++) {
-      dist=Max(dist,cam->cutoff_dists[ix]);
-      if(dist>=U16_MAX) break;
-    }
-    cam->max_cutoff_per_core[Gs->num]=dist;
-  }
-
+  if(drawn)
+    LBts(&sd->sector->drawn,0);
+//If we didnt draw the ceiling(2) or the floor(0),then maybe its just hidden sort of
+//Walls(1) always take up the entire column
+  if(!drawn&&floor==1)
+    return FALSE;
   return TRUE;
 }
 class CRayJobData:CJobRunnerData {
@@ -983,10 +919,12 @@ U0 DrawAThing(CDC *to_dc,CDoomThing *thing,CDoomCamera *cam) {
   sec=GetSectorForCoord(l,thing->x,thing->y);
   p.x=thing->x,p.y=thing->y;
   if(sec) {
-    if(thing->template==doom_thing_types[58]) { //Spectre
-      PlotSpriteIn3DSpace(to_dc,thing->template->height,sprite,cam,&p,thing->height,reflect,TRUE,sec->cur_light_level); //TRUEfor transparent
-    } else if(sprite)
-      PlotSpriteIn3DSpace(to_dc,thing->template->height,sprite,cam,&p,thing->height,reflect,,sec->cur_light_level+LightOffset);
+    if(sec->drawn) {
+      if(thing->template==doom_thing_types[58]) { //Spectre
+        PlotSpriteIn3DSpace(to_dc,thing->template->height,sprite,cam,&p,thing->height,reflect,TRUE,sec->cur_light_level); //TRUEfor transparent
+      } else if(sprite)
+        PlotSpriteIn3DSpace(to_dc,thing->template->height,sprite,cam,&p,thing->height,reflect,,sec->cur_light_level+LightOffset);
+    }
   }
 }
 CDoomSector *OppositeSector(CDoomLinedef *l,CDoomSector *sector) {
@@ -1007,13 +945,6 @@ F64 CeilDepress(CDoomLinedef *l,CDoomSector *sector) {
 F64 HighestCeil(CDoomLinedef *l,CDoomSector *sector) {
   F64 ret=sector->ceil_height;
   return ret;
-}
-
-I64 FrameCnt(CDC **arr) {
-  I64 i=0;
-  while(i<4&&arr[i])
-    i++;
-  return i;
 }
 
 CDC *GetMiddleTexture(CDoomSidedef *s) {
@@ -1096,7 +1027,6 @@ draw_wall:
 	  if(1) {
 	     if(fail_cnt!=2) {
 	      if(!no_draw) {
-		InsertVisplane(cam,sector);
 		if(wall==3) drawn++;
 	        if(seg->back_side)
 		  keep_draw|=QueRayCastJob(to_dc,texture,seg->end,seg->start,cam,floor,ceil-floor,sector->floor_height,highest_ceil,wall,seg->linedef,sidedef,TRUE);
@@ -1107,7 +1037,6 @@ draw_wall:
 		  sidedef=opposite;
 		  floor=sector->floor_height;
 		  ceil=sector->ceil_height;
-		  InsertVisplane(cam,opposite->sector);
 		  keep_draw|=QueRayCastJob(to_dc,texture,seg->start,seg->end,cam,floor,ceil-floor,sector->floor_height,highest_ceil,wall,seg->linedef,opposite,FALSE);
 	        }
 	      }
@@ -1126,11 +1055,10 @@ draw_wall:
         floor=Max(sector->floor_height,FloorRaise(seg->linedef,sector));
         ceil=Min(sector->ceil_height,CeilDepress(seg->linedef,sector));
         goto draw_wall;
-      } else if(wall==3) { //This is for generating visplanes
-        texture=gr.dc; //Dummy texture
+      } else if(wall==3) {
         floor=sector->floor_height;
         ceil=sector->ceil_height;
-        goto draw_wall;
+	goto draw_wall;
       }
     }
 skip:;
@@ -1144,12 +1072,12 @@ Bool FrontSide(Vector *v,CD2 *p) {
 }
 
 //box will either inteserect viewport,or point will be inside of it
-Bool HitsBBox(CDoomCamera *cam,CBoundBoxF64 *bbox) {
+Bool BoxIsVisible(CDoomCamera *cam,CBoundBoxF64 *bbox) {
   F64 x=cam->x,y=cam->y,angle,base;
   Vector *v,*v2;
   Bool ret=FALSE;
   CD2 a,b,c,d,zero,ra,rb,*p1,*p2,dummya,dummyb;
-  F64 closest,xd,yd,py,py2;
+  F64 closest,xd,yd,py,py2,dists[4];
   I64 iter,dir,sx,ex,ix;
   zero.x=0,zero.y=0;
   if(InRange(bbox->x,x,bbox->x2)&&InRange(bbox->y,y,bbox->y2))
@@ -1175,23 +1103,46 @@ Bool HitsBBox(CDoomCamera *cam,CBoundBoxF64 *bbox) {
   v->data[1]=ra.y;
   if(!FrontSide(v2,&a)&&FrontSide(v,&a))  {
     ret=TRUE;
+check:
+    ret=FALSE;
+    dists[0]=Sqrt(Sqr(a.x)+Sqr(a.y));
+    dists[1]=Sqrt(Sqr(b.x)+Sqr(b.y));
+    dists[2]=Sqrt(Sqr(c.x)+Sqr(c.y));
+    dists[3]=Sqrt(Sqr(d.x)+Sqr(d.y));
+    sx=ClampI64(0,ToF64(Gs->num)/mp_cnt*GR_WIDTH,ToF64(Gs->num+1)/mp_cnt*GR_WIDTH)&~1;
+    ex=ClampI64(GR_WIDTH,ToF64(Gs->num)/mp_cnt*GR_WIDTH,ToF64(Gs->num+1)/mp_cnt*GR_WIDTH)&~1;
+    closest=Min(Min(Min(dists[0],dists[1]),dists[2]),dists[3]);
+    while(sx<ex) {
+      if(cam->cutoff_dists[sx/2]>=closest) {
+        ret=TRUE;
+	goto done;
+      }
+      sx+=2;
+    }
+    
   } else if(!FrontSide(v2,&b)&&FrontSide(v,&b)) {
     ret=TRUE;
+    goto check;
   } else if(!FrontSide(v2,&c)&&FrontSide(v,&c)) {
     ret=TRUE;
+    goto check;
   } else if(!FrontSide(v2,&d)&&FrontSide(v,&d)) {
     ret=TRUE;
+    goto check;
   } else  if(PlaneIntersect(NULL,&a,&b,&zero,&ra)||
         PlaneIntersect(NULL,&b,&c,&zero,&ra)||
         PlaneIntersect(NULL,&c,&d,&zero,&ra)||
         PlaneIntersect(NULL,&d,&a,&zero,&ra)) {
     ret=TRUE;
+    goto check;
   } else if(PlaneIntersect(NULL,&a,&b,&zero,&rb)||
         PlaneIntersect(NULL,&b,&c,&zero,&rb)||
         PlaneIntersect(NULL,&c,&d,&zero,&rb)||
         PlaneIntersect(NULL,&d,&a,&zero,&rb)) {
     ret=TRUE;
+    goto check;
   }
+done:;
   DestroyVector(v);
   DestroyVector(v2);
   return ret;
@@ -1200,22 +1151,20 @@ Bool HitsBBox(CDoomCamera *cam,CBoundBoxF64 *bbox) {
 //Returns TRUEon keep rendering
 Bool DrawBSP0(CDC *to_dc,CDoomCamera *cam,CDoomBSPNode *node) {
 //Assumes we drew all the closest things as we cant draw anymore
-  if(cam->max_cutoff_per_core[Gs->num]<U16_MAX) return FALSE;
   if(cam->seg_cnts_per_core[Gs->num]>=0x100) return FALSE;
   if(node->signature!='NODE') {
     DrawSubsector(to_dc,cam,node);
     return TRUE;
   }
-  if(Bt(&node->visited,Gs->num)) return TRUE;
-  LBts(&node->visited,Gs->num);
+  if(LBts(&node->visited,Gs->num)) return TRUE;
   CD2 other;
 //Pick the closer node
   if(node->dx*(cam->y-node->y)-node->dy*(cam->x-node->x)<0.) {
-    if(HitsBBox(cam,&node->left)) DrawBSP0(to_dc,cam,node->left_child);
-    if(HitsBBox(cam,&node->right)) DrawBSP0(to_dc,cam,node->right_child);
+    if(BoxIsVisible(cam,&node->left)) DrawBSP0(to_dc,cam,node->left_child);
+    if(BoxIsVisible(cam,&node->right)) DrawBSP0(to_dc,cam,node->right_child);
   } else {
-    if(HitsBBox(cam,&node->right)) DrawBSP0(to_dc,cam,node->right_child);
-    if(HitsBBox(cam,&node->left)) DrawBSP0(to_dc,cam,node->left_child);
+    if(BoxIsVisible(cam,&node->right)) DrawBSP0(to_dc,cam,node->right_child);
+    if(BoxIsVisible(cam,&node->left)) DrawBSP0(to_dc,cam,node->left_child);
   }
   if(node->parent)
     DrawBSP0(to_dc,cam,node->parent);
@@ -1224,7 +1173,7 @@ Bool DrawBSP0(CDC *to_dc,CDoomCamera *cam,CDoomBSPNode *node) {
 }
 
 U0 DrawBSP(CDC *to_dc,CDoomCamera *cam,CDoomLevel *level) {
-  DrawBSP0(to_dc,cam,level->root_node); //DoomWhichBSPNode(cam->x,cam->y,level)
+  DrawBSP0(to_dc,cam,DoomWhichBSPNode(cam->x,cam->y,level));
 }
 
 I64 FloorSort(CVisplane *va,CVisplane *vb)  {
@@ -1348,7 +1297,6 @@ U0 DrawDoomWorld(CDoomCamera *cam,CDoomLevel *level,CDC *to_dc) {
   CMPDrawJob mpj;
   I64 idx=0,idx2,af,tf;
   LBts(&doom_scrn_in_draw,0);
-  cam->visplane_cnt=0;
   idx=GR_WIDTH/2;
 //F64
   while(--idx>=0) {
@@ -1357,8 +1305,6 @@ U0 DrawDoomWorld(CDoomCamera *cam,CDoomLevel *level,CDC *to_dc) {
     cam->max_floors[idx]=I32_MIN;
   }
   MemSetI64(cam->seg_cnts_per_core,0,mp_cnt);
-  idx=mp_cnt;
-  while(--idx>=0) cam->max_cutoff_per_core[idx]=I32_MAX;
   if(!cam->floor_dc) {
     cam->floor_dc=DCNew(GR_WIDTH/2,GR_HEIGHT/2);
     DCDepthBufAlloc(cam->floor_dc);
@@ -1384,9 +1330,8 @@ U0 DrawDoomWorld(CDoomCamera *cam,CDoomLevel *level,CDC *to_dc) {
   mpj.cam=cam;
   mp_done=0;
 //This ques the Cast Jobs
-  for(idx=mp_cnt-1;idx>=1;idx--) {
+  for(idx=1;idx<mp_cnt;idx++)
     JobQue(&MPDrawJob,&mpj,idx);
-  }
   DrawBSP(to_dc,cam,level);
   for(idx=1;idx<mp_cnt;idx++) {
     while(!Bt(&mp_done,idx))
@@ -1399,10 +1344,6 @@ U0 DrawDoomWorld(CDoomCamera *cam,CDoomLevel *level,CDC *to_dc) {
   cam->draw_walls->cnt=0;
 
   af=Server_tS*4;
-  for(idx2=0;idx2!=cam->visplane_cnt;idx2++) {
-    sorted[idx2]=&cam->visplanes[idx2];
-  }
-  QSortI64(sorted,cam->visplane_cnt,&FloorSort);
   mp_done=0;
   for(idx=mp_cnt-1;idx>=1;idx--) {
     JobQue(&MPDrawFlatsJob,&mpj,idx);

@@ -33,8 +33,9 @@ again:;
     sock=AiwniosSocket(0,0);
     sock->os_sock=code;
   } else {
-    if(NetPollForHangup(1,&s)==0)
+    if(NetPollForHangup(1,&s)==0) {
        return -1;
+    }
     Sleep(3);
     goto again;
   }

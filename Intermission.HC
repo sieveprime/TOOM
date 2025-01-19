@@ -283,7 +283,7 @@ U0 Intermission(CDoomLevel *lev,I64 ep,I64 l) {
   FlushMsgs;
   while(state<2) {
 
-    if(FramePtr("DOOM2")) {
+    if(!FramePtr("DOOM2")) {
       GrBlot(doom_scrn,0,0,background);
       DrawAnimatedBackground(doom_scrn,ep,l);
     } else {

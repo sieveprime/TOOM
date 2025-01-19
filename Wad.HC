@@ -29,14 +29,23 @@ I64 wad_sizes[0x100];
 CWad *wad;
 CWad *LoadWad(U8 *filename) {
   CDirEntry *de=FilesFind(filename);
+  CWad *ret;
   if(de) {
 //See MPServerBrowser
     FramePtrAdd("USE_WAD",StrNew(de->name));
     DirEntryDel(de);
   }
-  wads[wad_cnt]=FileRead(filename,&wad_sizes[wad_cnt]);
-  if(!wad_cnt) wad=wads[wad_cnt];
+  ret=FileRead(filename,&wad_sizes[wad_cnt]);
+  wads[wad_cnt]=ret;
+  if(!wad_cnt) wad=ret;
   wad_cnt++;
+
+  if(ToUpper(wad->ident[0])=='I')
+    FramePtrAdd("USE_IWAD",StrNew(filename));
+  if(ToUpper(wad->ident[0])=='P')
+    FramePtrAdd("USE_PWAD",StrNew(filename));
+
+  return ret;
 }
 
 #include "ModMan.HC";
@@ -195,7 +204,7 @@ class CDoomBSPNode:CQue {
   F64 x,y;
   F64 dx,dy;  
   CBoundBoxF64 left,right;
-  Bool visited;
+  I64 visited;
 };
 
 Bool BoundBoxF64Inside(F64 x,F64 y,CBoundBoxF64 *box) {

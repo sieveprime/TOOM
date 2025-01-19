@@ -66,7 +66,7 @@ class CMPConnect:CQue {
 I64 MPHashThing(CDoomThing *t) {
   if(!t->template) return 0;
 //>>2 to divide by 4,slightly moved objects will appear in the same spot. I dont think users will notice
-  I64 hash=ToI64(t->height)>>2*42+21*ToI64(t->y)>>2+ToI64(t->x)>>2;
+  I64 hash=ToI64(t->height)>>2<<24+ToI64(t->y)>>2<<12+ToI64(t->x)>>2;
   U8 *tmp;
   if(tmp=GetUNStr(t->animation))
     hash^=HashStr(tmp);
@@ -1005,7 +1005,7 @@ U0 ServerUpdate(I64) {
 //This function is re-callable(Call again for level transition).
 U0 ServerBegin(U16 port=TOOM_PORT) {
   if(FramePtr("Srv.Connects")) return ;
-  I64 listen_sock=SlimProxCreateServer("0.0.0.0",port,4);
+  I64 listen_sock=SlimProxCreateServer("0.0.0.0",port,0x10);
   CMPConnect *connects=CAlloc(sizeof CQue);
   QueInit(connects);
   FramePtrAdd("Srv.Connects",connects);
@@ -1165,7 +1165,6 @@ start_game:;
   SendMessage(connect,&what_lvl);
   while(TRUE) {
       msg=GetMessage(connect);
-PrintI("client",msg);
       if(!msg) {
         success=FALSE;
 	break;

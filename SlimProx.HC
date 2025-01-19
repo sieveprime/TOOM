@@ -53,7 +53,8 @@ U0 SlimProxTaskRead(CSlimProxSock *root_sock) {
   I64 cnt=0,got;
   U8 buf[0x20000],*ptr;
   while(TRUE) {
-    if(sizeof(CSlimProxHeader)==recv(root_sock->proxy,&hdr,sizeof(CSlimProxHeader),0)) {
+    got=recv(root_sock->proxy,&hdr,sizeof(CSlimProxHeader),0);
+    if(sizeof(CSlimProxHeader)==got) {
       cnt=hdr.size;
       switch(hdr.ident) {
 	case SLIM_PROX_DISCONNECT: {
@@ -91,7 +92,8 @@ U0 SlimProxTaskRead(CSlimProxSock *root_sock) {
 	        cnt-=got;
 	      ptr=buf;
 	      while(--got>=0) {
-	        FifoU8Ins(who->read_fifo,*ptr);
+	        while(!FifoU8Ins(who->read_fifo,*ptr))
+		  Sleep(3);
 	        ++ptr;
 	      } 
 	    }
@@ -193,8 +195,8 @@ CSlimProxSock *SlimProxCreateServer(U8 *at,I64 port,I64 bl) {
 }
 
 
-#define SLIM_PROX_START_PORT 6700
-#define SLIM_PROX_END_PORT 6800
+#define SLIM_PROX_START_PORT 7001
+#define SLIM_PROX_END_PORT 7100
 U8 used_ports[SLIM_PROX_END_PORT-SLIM_PROX_START_PORT+1];
 MemSet(used_ports,FALSE,SLIM_PROX_END_PORT-SLIM_PROX_START_PORT+1);
 
@@ -216,8 +218,7 @@ U0 SlimProxServerReadTask(I64 sock) {
       hdr.ident=SLIM_PROX_WRITE;
       hdr.size=cnt;
       hdr.who=idx;
-      send(who,&hdr,sizeof(CSlimProxHeader),0);
-      send(who,buf,cnt,0);
+      if(cnt) send(who,buf,cnt,0);
     } else
       Sleep(3);
   }
@@ -251,8 +252,7 @@ U0 SlimProxServerAcceptTask(I64) {
     }
 //Not enough open holes
     close(new);
-next:
-   Sleep(3);
+next:;
   }
   if(tmp=FramePtr("SLIM_PROX_EXIT_CB")) {
     ExePutS(tmp);
@@ -279,8 +279,8 @@ fail:;
     close(sock);
     return;
   }
-  if(port) *port=use_port;
   server_sock=create_server("0.0.0.0",use_port,0x10);
+  if(port) *port=use_port;
   FramePtrAdd("ServerSock",server_sock);
   FramePtrAdd("ToSock",sock);
   FramePtrAdd("AvailSocks",avail_socks);
@@ -288,9 +288,7 @@ fail:;
      goto fail;
   Spawn(&SlimProxServerAcceptTask,0,,,Fs);
   while(TRUE) {
-    hdr=0;
     cnt=recv(sock,&hdr,sizeof(CSlimProxHeader),0);
-PrintI("cnt",cnt);
     if(cnt<0) {
       break;
     }
@@ -298,7 +296,7 @@ PrintI("cnt",cnt);
       if(avail_socks[hdr.who]) {
         while(hdr.size>0) {
           cnt=recv(sock,&buf,MinI64(hdr.size,0x10000*2),0);
-	  send(avail_socks[hdr.who],buf,cnt,0);
+	  if(cnt) send(avail_socks[hdr.who],buf,cnt,0);
 	  hdr.size-=cnt;
 	}
       }
@@ -313,6 +311,7 @@ PrintI("cnt",cnt);
   if(tmp=FramePtr("SLIM_PROX_EXIT_CB")) {
     ExePutS(tmp);
   }
+  close(server_sock);
   close(sock);
 }  
 U0 SlimProxClose(I64 sock) {

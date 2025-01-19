@@ -22,10 +22,12 @@ U0 SendString(I64 sock,U8 *fmt,...) {
 }
 U8 *ReceiveString(I64 sock) {
   U32 len;
-  if(4!=recv(sock,&len,4,0))
+  I64 h=recv(sock,&len,4,0);
+  if(4!=h)
     return NULL;
   U8 *ret=CAlloc(len+1);
-  if(len!=recv(sock,ret,len,0)) {
+  I64 got=recv(sock,ret,len,0);
+  if(len!=got) {
     Free(ret);
     return NULL;
   }
@@ -55,7 +57,7 @@ U0 ServerIncomingTask(CListClient *cl) {
       ptr=&cl->host_game_wad;
       ptr2=&cl->host_game_desc;
       body=StrScan(body,"%s(%s):%d\n",&ptr,&ptr2,&wad_hash);
-      tmp=MStrPrint("RemoveHost(0x%X\n);\n",cl);
+      tmp=MStrPrint("	RemoveHost(0x%X\n);\n",cl);
       FramePtrAdd("SLIM_PROX_EXIT_CB",tmp);
       SlimProxServerTask(cl->socket,&cl->host_game_at_port);
       Free(_body);
@@ -103,7 +105,10 @@ U0 HostGameBrowser(U8 *at="0.0.0.0") {
 }
 class CHostGameData {
   U8 game_wad[STR_LEN] format "$$DA-P,A=\"DoomWad:%s\"$$\n";
+  U8 game_pwad[STR_LEN] format "$$DA-P,A=\"PWad:%s\"$$\n";
+  U8 name[STR_LEN] format "$$DA-P,A=\"Name:%s\"$$\n";
   U8 desc[STR_LEN] format "$$DA-P,A=\"Desciption:%s\"$$\n";
+  Bool just_serve format "$$CB,\"Just Serve:\"$$\n";
   I64 wad_hash;
 };
 U0 RemoveHost(CListClient *cl) {
@@ -119,68 +124,111 @@ U0 HostGame(I64 sock) {
     throw('Wad');
   }
   StrCpy(&data.game_wad,FramePtr("USE_WAD"));
+  StrCpy(&data.name,"Untitled");
   StrCpy(&data.desc,"");
+  data.just_serve=FALSE;
   data.wad_hash=0;
   DocForm(&data,,0,"$$PURPLE$$$$TX+C,\"Host a game of Doom.\"$$$$FD$$\n");
-  SendString(sock,"HOST:%s(%s):%d\n",data.game_wad,data.desc,data.wad_hash);
+  SendString(sock,"HOST:%s:%s(%s):%d\n",data.game_wad,data.game_pwad,data.name,data.wad_hash);
   if(W_GetLumpPtrFromName("E1M1")) {
     map="E1M1";
   } else if(W_GetLumpPtrFromName("MAP01")) {
     map="MAP01";
   } else {
     PopUpOk("I can't find the first level!!!\n");
-    throw('Wad');
+     throw('Wad');
   }
-  me=User;
   FramePtrAdd("SLIM_PROX",1);
   FramePtrAdd("SLIM_PROX_SOCK",sock);
-  FramePtrAdd("SLIM_PROX",1,me);
-  WinMax(me);
+  if(!data.just_serve) {
+    me=User;
+    FramePtrAdd("SLIM_PROX",1,me);
+    FramePtrAdd("SLIM_PROX_USE_DUMB_SOCK",1,me);
+    WinMax(me);
+    XTalk(me,"#include \"%Q/MPClient\";;\n",__DIR__);
+  }
 //See SlimProx.HC
-  FramePtrAdd("SLIM_PROX_USE_DUMB_SOCK",1,me);
-  XTalk(me,"#include \"%Q/MPClient\";;\n",__DIR__);
+  PrintI(" serce",1);
   ServeGame(map ,4);
+  Beep;
+  close(sock);
+}
+U0 DeleteBranch(CDoc *doc,U8 *who) {
+  CDocEntry *br,*st,*en;
+  if(DocTreeFind(doc,who,&br,&st,&en)) {
+    DocCut(doc,br,en);
+  }
 }
 //Returns server port
 I64 ServerBrowser(U8 *server="0.0.0.0") {
   F64 next_refresh_tS=0;
+  CI64Set *games=I64SetNew;
+  CI64Set *old_games=I64SetNew;
   CDoc *doc=DocPut;
   Bool continue=TRUE;
-  I64 msg,m1,m2;
+  I64 msg,m1,m2,idx;
   I64 listen_sock=create_connection(server,GAME_LIST_PORT);
   U8 *buf,*_buf;
-  U8 wad[STR_LEN],*ptr=wad;
-  U8 desc[STR_LEN],*ptr2=desc;
+  U8 wad[STR_LEN],*ptr,*wad_ptr=wad;
+  U8 pwad[STR_LEN],*pwad_ptr=pwad;
+  U8 desc[STR_LEN],*ptr2,*desc_ptr=desc;
   I64 port,has_action;
   DocClear;
-  DocPrint(doc,"$$LTPURPLE$$$$TX+C,\"Listing of %Q\"$$$$FD$$\n",server);
-  DocPrint(doc,"\n\n$$BT+PU,\"Host game\",LM=\"HostGame(%d);\\n\"\n\n$$",listen_sock);
+  DocPrint(doc,"$$LTPURPLE$$$$TX+C+H,\"Listing of %Q\"$$$$FD$$\n",server);
+  DocPrint(doc,"\n\n$$BT+H+PU,\"Host game\",LM=\"HostGame(%d);\\n\"\n\n$$",listen_sock);
   while(continue) {
     if(next_refresh_tS<tS) {
-      m1=doc->x;
-      m2=doc->y;
-//      DocClear;
       next_refresh_tS=tS+1.;
       SendString(listen_sock,"LIST:");
+      old_games->cnt=0;
+      for(idx=0;idx!=games->cnt;idx++) {
+	I64SetAdd(old_games,games->body[idx]);
+      }
+      games->cnt=0;
       while(buf=ReceiveString(listen_sock)) {
         _buf=buf;
         if(!StrNCmp("GAME:",_buf,5)) {
 	  buf+=5;
-	  StrScan(buf,"%s(%s):%d\n",&ptr,&ptr2,&port);
-	  ptr=MStrPrint("%Q/%Q",wad,desc);
-          DocTreeWrite(doc,ptr,FALSE,"\n\n$$BT,\"Join Game\",LM=\"PlayNetworkGame(\\\"%Q\\\",%d);;\n;\"$$\n\n",server,port);
-          Free(ptr);
-	  break;
+          ptr=StrNew(buf);
+	  for(idx=0;idx!=old_games->cnt;idx++) {
+	    if(!StrCmp(ptr,ptr2=old_games->body[idx])) {
+	      I64SetRem(old_games,ptr2);
+	      Free(ptr2);
+	      I64SetAdd(games,ptr);
+	      goto skip;
+	    }
+	  }
+	  I64SetAdd(games,ptr);
+          StrScan(buf,"%s:%s(%s):%d\n",&wad_ptr,&pwad_ptr,&desc_ptr,&port);
+	  if(!*pwad_ptr)
+	    ptr=MStrPrint("%Q:%d/%Q",wad,port,desc);
+	  else
+	    ptr=MStrPrint("%Q(%Q):%d/%Q",wad,pwad,port,desc);
+
+	  if(!DocTreeFind(doc,ptr)) {
+            DocTreeWrite(doc,ptr,FALSE,"\n\n$$BT,\"Join Game\",LM=\"PlayNetworkGame(\\\"%Q\\\",%d);\n;\"$$\n\n",server,port);
+            DocCollapse(FALSE,doc);
+	  }
+	  Free(ptr);
+skip:
         } else if(!StrNCmp("DONE:",_buf,5)) {
+	  for(idx=0;idx!=old_games->cnt;idx++) {
+	    ptr=old_games->body[idx];
+            StrScan(ptr,"%s:%s(%s):%d\n",&wad_ptr,&pwad_ptr,&desc_ptr,&port);
+	    if(!*pwad_ptr)
+	      ptr2=MStrPrint("%Q:%d/%Q",wad,port,desc);
+	    else
+	      ptr2=MStrPrint("%Q(%Q):%d/%Q",wad,pwad,port,desc);
+	    DeleteBranch(doc,ptr2);
+	    Free(ptr2);
+	    Free(ptr);
+	  }
+	  old_games->cnt=0;
           Free(_buf);
 	  break;
         }
         Free(_buf);
       }
-      DocCollapse(FALSE,doc);
-      doc->x=m1;
-      doc->y=m2;
-      DocRecalc(doc,RECALCt_FIND_CURSOR);
     }
     if(MSG_KEY_DOWN==ScanMsg(&m1,&m2)) {
       if(m1==' '||m1=='\n'||m1==CH_ESC) {
@@ -193,6 +241,10 @@ I64 ServerBrowser(U8 *server="0.0.0.0") {
     }
     Refresh;
   }
+  m1=games->cnt;
+  while(--m1>=0)
+    Free(games->body[m1]);
+  I64SetDel(games);
 }
 #if __CMD_LINE__
 ServerBrowser;

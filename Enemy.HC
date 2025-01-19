@@ -829,13 +829,11 @@ Bool LookForPlayers(CDoomLevel *l,CMonsterThinker *t) {
   if(s)
     if(s->noise_thing&&IsPlayer(s->noise_thing)) {
       target=t->target=s->noise_thing;
-PrintI("fart",t);
       return TRUE;
     }
   if(!CanSeeTarget(l,t)) {
 new_target:
     t->target=GetVisiblePlayer(thing);
-PrintI("poo",t);
     return FALSE;
   }
 see:
