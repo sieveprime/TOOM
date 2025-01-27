@@ -17,7 +17,7 @@
   } else if(a) {
     StreamPrint("#include \"CrossNetShims/Aiwnios2.HC\";;\n");
   } else if(e) {
-    StreamPrint("#include \"CrossNetShims/EXODUS.HC\";;\n");
+    StreamPrint("#include \"CrossNetShims/EXODUS.HC\";;\n");
   }
 };;
 #exe{
@@ -83,7 +83,7 @@ U0 SlimProxTaskRead(CSlimProxSock *root_sock) {
   I64 cnt=0,got;
   U8 buf[0x20000],*ptr;
   while(TRUE) {
-    got=ForceRecv(root_sock->proxy,&hdr,sizeof(CSlimProxHeader),0);
+    got=ForceRecv(root_sock->proxy,&hdr,sizeof(CSlimProxHeader),0);
     if(sizeof(CSlimProxHeader)==got) {
       cnt=hdr.size;
       switch(hdr.ident) {
@@ -382,7 +382,6 @@ I64 SlimProxReceive(I64 sock,U8 *buf,I64 len,I64 ul) {
   } else
     use_fifo=sp->read_fifo;
   while(FifoU8Cnt(use_fifo)<len) {
-PrintI("rlock",1);
     if(sp->closed) {
       return -1;
     }
@@ -414,7 +413,6 @@ I64 SlimProxSend(I64 sock,U8 *buf,I64 len,I64 ul) {
     use_fifo=sp->write_fifo;
   while(--len>=0) {
     while(!FifoU8Ins(use_fifo,*buf)) {
-PrintI("sendlock",1);
       if(sp->closed) {
         LBtr(&sp->lock,1);
         return -1;

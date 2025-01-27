@@ -64,7 +64,7 @@ class CMPConnect:CQue {
   I64 flags;
 };
 
-CDoomPlayer *GetClientPlayer() {
+CDoomPlayer *GetClientPlayer() {
   CMPConnect *mpc=FramePtr("Client.Connect");
   return mpc->player;
 }
@@ -286,7 +286,6 @@ extern U0 MPClientSync(CMPConnect *con,CDoomLevel *l);
 U0 SendMessage(CMPConnect *con,CGenericHeader *msg) {
   msg->tS=Server_tS;
   CArcCompress *buf=CompressBuf(msg,msg->sz);
-PrintI(&msg->ident,msg->sz);
   SlimProxSend(con->sock,buf,buf->compressed_size,0);
   Free(buf);
 }
@@ -303,8 +302,7 @@ CGenericHeader *GetMessage(CMPConnect *con) {
   SlimProxReceive(con->sock,b1+1,b1->compressed_size-sizeof(CArcCompress),0);
   b2=ExpandBuf(b1);
   Free(b1); 
-PrintI(&b2->ident,b2->sz);
-  return b2;
+  return b2;
 }
 
 Bool Server_MPConnectUpdateSidedefs(CMPConnect *con,CDoomLevel *l) {
