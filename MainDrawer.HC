@@ -1287,8 +1287,8 @@ U0 MPDrawFlatsJob(CMPDrawJob *md) {
   }
   LBts(&mp_done,Gs->num);
 }
-extern U0 WorldLock();
-extern U0 WorldUnlock();
+extern U0 WorldLock(Bool read=FALSE);
+extern U0 WorldUnlock(Bool read=FALSE);
 U0 DrawDoomWorld(CDoomCamera *cam,CDoomLevel *level,CDC *to_dc) {
   WorldLock;
   CDoomSector *sector;  
@@ -2822,6 +2822,7 @@ Bool TriggerLinedef(CDoomLevel *l,CDoomLinedef *ld,I64 flags,CDoomThing *who) {
 
 
 extern U0 LineAttack(CDoomLevel *l,CDoomThing *self,CDoomThing *target,F64 range,F64 angle,F64 damage);
+extern U0 SendPickup(CDoomLevel *l,CDoomThing *p);
 #include "Collision.HC";
 #include "ST.HC";
 #include "Player.HC";
@@ -2838,6 +2839,8 @@ U0 _CheckPowerupPickup(CDoomLevel *l,CDoomPlayer *p) {
   U8 *got_msg=NULL;
   for(idx=0;idx!=things->cnt;idx++) {
     t=things->body[idx];
+    if(!t->template)
+     goto next;
     if(SqrI64(2*t->template->radius)>=SqrI64(p->x-t->x)+SqrI64(p->y-t->y)) {
       switch(t->template->type) {
 	  case 2006: //BFG
@@ -2855,11 +2858,14 @@ cell:
 	    load->ammo=ClampI64(load->ammo,0,maxCells);
 	    if(load->ammo!=orig||new_gun) {
 rem:
-	      if(got_msg)
-		ST_Message(p,got_msg);
 	      p->pickup_amt+=6;
 	      if(t->template->flags&TF_ARTIFACT)
 	        l->stats.have_items++;
+	      if(IsNetworkGameClient)  {
+		SendPickup(FramePtr("Client.Connect"),t);
+	      }
+	      if(got_msg)
+		ST_Message(p,got_msg);
 	      ThingDel(l,t);
 	    }
 	    break;
@@ -3143,6 +3149,7 @@ rem:
 	      goto rem;
 	    break;
       }
+next:;
     }
   }
   if(picked_up_gun!=-1&&new_gun)
@@ -3151,32 +3158,10 @@ rem:
 }
 U0 CheckPowerupPickup(CDoomLevel *l) {
   CDoomPlayer *p,*head=&l->things;
-  I64 old_load_ammo[9],idx,cnt;  
+  I64 old_load_ammo[9],idx,cnt,new;  
   for(p=head->next;p!=head;p=p->next) {
     if(IsPlayer(p)) {
       if(IsNetworkGameServer) {
-        if(FramePtr("DOOM2")) {
-	  cnt=9;
-        } else {
-	  cnt=8;
-        }
-//Heres the deal,in server ->ammo is the addtional amount to be sent to player
-        // ->ammo2 is the amount the client has,if we are a server,swap them,then compute difference
-        for(idx=0;idx!=cnt;idx++) {
-	  if(p->arsenal[idx].load) {
-	    old_load_ammo[idx]=0; //Ammo to add to the client
-	    p->arsenal[idx].load->ammo=0; //Client total ammo
-	  }
-        }
-        _CheckPowerupPickup(l,p);
-        for(idx=0;idx!=cnt;idx++) {
-//Make the ->ammo a relative ammount to the old value
-	  if(p->arsenal[idx].load)
-	    if(idx!=3&&idx!=7&&idx!=8) {
-	      p->arsenal[idx].load->ammo2=
-		    p->arsenal[idx].load->ammo-old_load_ammo[idx];
-	    }
-        }
       } else
         _CheckPowerupPickup(l,p);
     }
@@ -3227,15 +3212,20 @@ Bool PlayerAttack(F64 shots_per_minute,F64 min_damage,F64 max_damage,F64 range,U
 U0 UpdateLevel(CDoomLevel *l) {
   CDoomPlayer *p,*thead=&l->things;
   if(IsNetworkGameClient) {
+    WorldLock;
     for(p=thead->next;p!=thead;p=p->next)
-      if(IsPlayer(p))
+      if(IsPlayer(p)) {
+        _CheckPowerupPickup(l,p);
         PhysicsOnThing(l,p);
+      }
+
+    WorldUnlock;
     return;
   }
   CDoomSector *sector,*head=&l->sectors;
   UpdateThinkers(l);
   Physics(l);
-  CheckPowerupPickup(l);
+fin:;
   for(p=thead->next;p!=thead;p=p->next) {
     if(IsPlayer(p)) {
       if(p&&p->rad_suit_time)
@@ -3629,6 +3619,7 @@ ent:;
     DrawDoomWorld(&cam,l,doom_scrn);
 
     if(talk_active&&IsNetworkGameClient) {
+      ST_Start(p);
       talk_active=MPTalk(doom_scrn,FramePtr("Client.Connect"));
       goto end_control;
     }

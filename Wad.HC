@@ -154,6 +154,8 @@ class CWadSubsector {
 
 //extern class CDoomAnimationFrame;
 class CDoomThing:CQue {
+  F64 old_x,old_y,old_height;
+  F64 new_x,new_y,new_height;
   F64 x,y,angle,height,health;
   F64 spawn_x,spawn_y; //For Nightmare
   F64 died_at_tS;
@@ -1001,6 +1003,8 @@ pass_thing:
     dthing=CAlloc(sizeof CDoomThing);
     dthing->x=wthing->x;
     dthing->y=wthing->y;
+    dthing->old_x=dthing->x;
+    dthing->old_y=dthing->y;
     dthing->angle=wthing->angle*pi/180;
     dthing->thing_type=wthing->thing_type;
     dthing->template=doom_thing_types[wthing->thing_type];

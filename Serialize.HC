@@ -8,7 +8,7 @@ U8 *UH(U8 *name,U8 *ptr) {
 U8 *UH2(U8 *name,U8 *ptr) {
   return ptr;
 }
-U0 PurgeUH2() {
+U0 PurgeUH2() {
   CHashTable *tab=Fs->hash_table;
   CHashGeneric *tmph,*tmph2;
   I64 bucket;

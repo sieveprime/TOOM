@@ -36,7 +36,7 @@ again:;
     if(NetPollForHangup(1,&s)==0) {
        return -1;
     }
-    Sleep(3);
+    Sleep(1);
     goto again;
   }
   return sock;
@@ -74,7 +74,7 @@ I64 AiwniosRecvFrom(CAiwniosSock *_s,U8 *buf,I64 len,I64 flags,sockaddr *ul,I64 
   while(0!=NetPollForRead(1,&s)) {
     if(0==NetPollForHangup(1,&s))
       return -1;
-    Sleep(3);
+    Sleep(1);
   };
   I64 r=NetRead(s,buf,len);
   if(len&&!r)

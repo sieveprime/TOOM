@@ -468,7 +468,7 @@ U0 ST_Message(CDoomPlayer *p,U8 *msg) {
   if(FifoI64Ins(p->messages,msg)) {
     p->message_end_tS=Server_tS+1.5;
   } else
-    Free(msg);
+    Free(msg);
 }
 
 U0 InitWidgets()

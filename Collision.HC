@@ -153,8 +153,9 @@ CI64Set *ThingsInRadius(CDoomLevel *l,I64 x,I64 y,F64 radius) {
 	  bmthings=l->block_map_things[
 	        blockx+xo+
 	        (yo+blocky)*l->block_map_cols];
-	  for(i=0;i!=bmthings->cnt;i++)
-	    I64SetAdd(homies,bmthings->body[i]);
+	  for(i=0;i!=bmthings->cnt;i++) {
+	    I64SetAdd(homies,bmthings->body[i]);
+          }
         }
   return homies;
 }

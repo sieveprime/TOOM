@@ -24,6 +24,32 @@
   Cd(FramePtr("OLD_DIR"));
   FramePtrDel("OLD_DIR");
 }
+I64 ForceSend(I64 sock,U8 *buf,I64 len,U64 ul=0) {
+  I64 sent;
+  I64 olen=len;
+  while(len>0) {
+    sent=send(sock,buf,len,ul);
+     if(sent<0) {
+      return -1;
+    }
+    buf+=sent;
+    len-=sent;
+  }
+  return olen;
+}
+I64 ForceRecv(I64 sock,U8 *buf,I64 len,U64 ul=0) {
+  I64 got;
+  I64 olen=len;
+  while(len>0) {
+    got=recv(sock,buf,len,ul);
+    if(got<0) {
+      return -1;
+    }
+    buf+=got;
+    len-=got;
+  }
+  return olen;
+}
 CTask *slim_prox_task=Fs;
 class CSlimProxSock {
   I64 proxy,lock;
@@ -53,7 +79,7 @@ U0 SlimProxTaskRead(CSlimProxSock *root_sock) {
   I64 cnt=0,got;
   U8 buf[0x20000],*ptr;
   while(TRUE) {
-    got=recv(root_sock->proxy,&hdr,sizeof(CSlimProxHeader),0);
+    got=ForceRecv(root_sock->proxy,&hdr,sizeof(CSlimProxHeader),0);
     if(sizeof(CSlimProxHeader)==got) {
       cnt=hdr.size;
       switch(hdr.ident) {
@@ -71,11 +97,10 @@ U0 SlimProxTaskRead(CSlimProxSock *root_sock) {
 	  if(FifoI64Ins(root_sock->accept_fifo,who)) {
             who->parent=root_sock;
 	    who->children=I64SetNew();
-	    who->write_fifo=FifoU8New(0x10000*2,Fs->parent_task);
-	    who->read_fifo=FifoU8New(0x10000*2,Fs->parent_task);
+	    who->write_fifo=FifoU8New(1<<20,Fs->parent_task);
+	    who->read_fifo=FifoU8New(1<<20,Fs->parent_task);
 	    I64SetAdd(root_sock->children,who);
-	    FifoI64Ins(root_sock->accept_fifo,who);
-	  } else {
+	  } else {
 	    Free(who);
 	  }
 	}
@@ -85,7 +110,7 @@ U0 SlimProxTaskRead(CSlimProxSock *root_sock) {
 	    who=root_sock->children->body[hdr.who];
 	    if(who)
 	     while(cnt>0) {
-	      got=recv(root_sock->proxy,buf,MinI64(cnt,0x10000*2),0);
+	      got=ForceRecv(root_sock->proxy,buf,MinI64(cnt,0x20000),0);
 	      if(got<=0)
 		goto fin;
 	      if(got>0) 
@@ -132,8 +157,8 @@ again:
 	    hdr.ident=SLIM_PROX_WRITE;
 	    hdr.who=cnt;
 	    hdr.size=ToI64(ptr)-ToI64(&buf);
-            send(root_sock->proxy,&hdr,sizeof(CSlimProxHeader),0);
-            send(root_sock->proxy,buf,hdr.size,0);
+            ForceSend(root_sock->proxy,&hdr,sizeof(CSlimProxHeader),0);
+            ForceSend(root_sock->proxy,buf,hdr.size,0);
 	  }
 	}
       }
@@ -155,8 +180,8 @@ again:;
   who->is_dumb=TRUE;
   who->parent=root_sock;
   who->children=I64SetNew();
-  who->write_fifo=FifoU8New(0x10000*2,Fs->parent_task);
-  who->read_fifo=FifoU8New(0x10000*2,Fs->parent_task);
+  who->write_fifo=FifoU8New(1<<20,Fs->parent_task);
+  who->read_fifo=FifoU8New(1<<20,Fs->parent_task);
   I64SetAdd(root_sock->children,who);
   FifoI64Ins(root_sock->accept_fifo,who);
   return who;
@@ -218,15 +243,15 @@ U0 SlimProxServerReadTask(I64 sock) {
       hdr.ident=SLIM_PROX_WRITE;
       hdr.size=cnt;
       hdr.who=idx;
-      send(who,&hdr,sizeof(CSlimProxHeader),0);
-      if(cnt) send(who,buf,cnt,0);
+      ForceSend(who,&hdr,sizeof(CSlimProxHeader),0);
+      if(cnt) ForceSend(who,buf,cnt,0);
     } else
       Sleep(3);
   }
   hdr.ident=SLIM_PROX_DISCONNECT;
   hdr.size=0;
   hdr.who=idx;
-  send(who,&hdr,sizeof(CSlimProxHeader),0);
+  ForceSend(who,&hdr,sizeof(CSlimProxHeader),0);
   close(sock);
 }
 
@@ -246,7 +271,7 @@ U0 SlimProxServerAcceptTask(I64) {
         hdr.ident=SLIM_PROX_ACCEPT;
 	hdr.size=0;
 	hdr.who=idx;
-        send(who,&hdr,sizeof(CSlimProxHeader),0);
+        ForceSend(who,&hdr,sizeof(CSlimProxHeader),0);
 	Spawn(&SlimProxServerReadTask,new,,,Fs);
 	goto next;
       }
@@ -289,15 +314,15 @@ fail:;
      goto fail;
   Spawn(&SlimProxServerAcceptTask,0,,,Fs);
   while(TRUE) {
-    cnt=recv(sock,&hdr,sizeof(CSlimProxHeader),0);
+    cnt=ForceRecv(sock,&hdr,sizeof(CSlimProxHeader),0);
     if(cnt<0) {
       break;
     }
     if(hdr.ident==SLIM_PROX_WRITE) {
       if(avail_socks[hdr.who]) {
         while(hdr.size>0) {
-          cnt=recv(sock,&buf,MinI64(hdr.size,0x10000*2),0);
-	  if(cnt) send(avail_socks[hdr.who],buf,cnt,0);
+          cnt=ForceRecv(sock,&buf,MinI64(hdr.size,0x10000*2),0);
+	  if(cnt) ForceSend(avail_socks[hdr.who],buf,cnt,0);
 	  hdr.size-=cnt;
 	}
       }
@@ -342,7 +367,7 @@ I64 SlimProxAccept(I64 sock,U8 *who,I64 ul) {
 
 I64 SlimProxReceive(I64 sock,U8 *buf,I64 len,I64 ul) {
   if(!FramePtr("SLIM_PROX"))
-    return recv(sock,buf,len,ul);
+    return ForceRecv(sock,buf,len,ul);
   I64 ate;
   CSlimProxSock *sp=sock; 
   CFifoU8 *use_fifo;
@@ -353,6 +378,7 @@ I64 SlimProxReceive(I64 sock,U8 *buf,I64 len,I64 ul) {
   } else
     use_fifo=sp->read_fifo;
   while(FifoU8Cnt(use_fifo)<len) {
+PrintI("rlock",1);
     if(sp->closed) {
       return -1;
     }
@@ -365,8 +391,11 @@ I64 SlimProxReceive(I64 sock,U8 *buf,I64 len,I64 ul) {
   return ate;
 }
 I64 SlimProxSend(I64 sock,U8 *buf,I64 len,I64 ul) {
-  if(!FramePtr("SLIM_PROX"))
-    return send(sock,buf,len,ul);
+  I64 sent;
+  if(!FramePtr("SLIM_PROX")) {
+    ForceSend(sock,buf,len);
+    return;
+  }
   I64 ate=len;
   CSlimProxSock *sp=sock; 
   CFifoU8 *use_fifo;
@@ -381,6 +410,7 @@ I64 SlimProxSend(I64 sock,U8 *buf,I64 len,I64 ul) {
     use_fifo=sp->write_fifo;
   while(--len>=0) {
     while(!FifoU8Ins(use_fifo,*buf)) {
+PrintI("sendlock",1);
       if(sp->closed) {
         LBtr(&sp->lock,1);
         return -1;

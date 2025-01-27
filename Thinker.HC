@@ -18,9 +18,12 @@ class CDoomThinker:CDoomThinkerBase {
 };
 U0 UpdateThinkers(CDoomLevel *l) {
 //There are lots of monsters,be sure to only update about 10 times a second(game runs at 30 fps)
-  static I64 tick=0;
+  static F64 next_monster=tS;
   Bool do_monster=FALSE;
-  if(tick++&1==0) do_monster=TRUE;
+  if(tS>next_monster) {
+    do_monster=TRUE;
+    next_monster=tS+1/10.;
+  }
   CDoomThinker *head=&l->thinkers,*cur,*next;
   for(cur=head->next;head!=cur;cur=next) {
     next=cur->next; //thinker may be deleted

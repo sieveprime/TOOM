@@ -212,7 +212,9 @@ F64 AnimationTime(CDoomAnimationFrame *f) {
 }
 
 U0 _CacheAnimationFrames(CDoomThingTemplate *t) {
-  t->_animation=GenerateCacheFrames(t,t->animation);
+  U8 buf[STR_LEN];
+  StrPrint(buf,"DftAn%d",t->type);
+  UH(buf,t->_animation=GenerateCacheFrames(t,t->animation));
 }
 U0 CacheAnimationFrames() {
   I64 i=0;

@@ -130,7 +130,7 @@ done:
     return;
   }
 }
-U0 Sound(CMonsterThinker *t,U64 type) {
+U0 Sound(CMonsterThinker *t,U64 type) {
   if(type=='See')
     switch(t->self->template->type) {
       case 71: //Pain elemental
@@ -540,7 +540,19 @@ Bool SetState(CDoomLevel *l,CMonsterThinker *m,U8 *st,CState *cached=NULL) {
     m->ran_state=FALSE;
   depth--;
 }
-extern U0     ServerSendPlayerDamagePush(CDoomPlayer*,F64,F64);
+extern U0     ServerSendPlayerDamagePush(CDoomPlayer*,F64,F64,F64);
+U0 DamagePlayer(CDoomPlayer *p2,F64 damage) {
+  if(p2->invincible_time>0.)
+    return;
+  if(p2->armor<=100.) {
+    damage-=damage*1/2.;
+  } else {
+    damage-=damage*1/3.;
+  }
+  p2->hurt_amt+=damage;
+  p2->armor=Max(p2->armor-damage,0.);
+  p2->health=Max(0,p2->health-damage);
+}
 U0 DamageMob(CDoomLevel *l,CDoomThing *target,CDoomThing *opp,F64 damage){
   CDoomMonsterTemplate *template=target->template;
   CMonsterThinker*thinker=target->thinker;
@@ -560,21 +572,14 @@ U0 DamageMob(CDoomLevel *l,CDoomThing *target,CDoomThing *opp,F64 damage){
     }
     target->momx+=thrust*Cos(angle);
     target->momy+=thrust*Sin(angle);
-    ServerSendPlayerDamagePush(target,angle,thrust);
   }
   if(IsPlayer(target)) {
-    p2=target;
-    if(p2->invincible_time>0.)
-      return;
-    if(p2->armor<=100.) {
-      damage-=damage*1/2.;
-    } else {
-      damage-=damage*1/3.;
-    }
-    p2->hurt_amt+=damage;
-    p2->armor=Max(p2->armor-damage,0.);
-  }
-  target->health-=damage;
+    if(IsNetworkGameServer) {
+      ServerSendPlayerDamagePush(target,angle,thrust,damage);
+    } else
+      DamagePlayer(target,damage);
+  } else
+    target->health-=damage;
   if(IsPlayer(target))
     target(CDoomPlayer*)->stare_at=opp;
   if(0.>=target->health) {

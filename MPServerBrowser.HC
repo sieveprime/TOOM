@@ -126,6 +126,7 @@ U0 HostGame(I64 sock) {
   StrCpy(&data.game_wad,FramePtr("USE_WAD"));
   StrCpy(&data.name,"Untitled");
   StrCpy(&data.desc,"");
+  StrCpy(&data.game_pwad,"");
   data.just_serve=FALSE;
   data.wad_hash=0;
   DocForm(&data,,0,"$$PURPLE$$$$TX+C,\"Host a game of Doom.\"$$$$FD$$\n");
@@ -137,7 +138,7 @@ U0 HostGame(I64 sock) {
   } else {
     PopUpOk("I can't find the first level!!!\n");
      throw('Wad');
-  }
+  }
   FramePtrAdd("SLIM_PROX",1);
   FramePtrAdd("SLIM_PROX_SOCK",sock);
   if(!data.just_serve) {
@@ -247,5 +248,5 @@ skip:
   I64SetDel(games);
 }
 #if __CMD_LINE__
-ServerBrowser;
+ServerBrowser("aiwnios.com");
 #endif
