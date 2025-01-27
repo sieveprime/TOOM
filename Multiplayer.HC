@@ -64,7 +64,7 @@ class CMPConnect:CQue {
   I64 flags;
 };
 
-CDoomPlayer *GetClientPlayer() {
+CDoomPlayer *GetClientPlayer() {
   CMPConnect *mpc=FramePtr("Client.Connect");
   return mpc->player;
 }
@@ -286,6 +286,7 @@ extern U0 MPClientSync(CMPConnect *con,CDoomLevel *l);
 U0 SendMessage(CMPConnect *con,CGenericHeader *msg) {
   msg->tS=Server_tS;
   CArcCompress *buf=CompressBuf(msg,msg->sz);
+PrintI(&msg->ident,msg->sz);
   SlimProxSend(con->sock,buf,buf->compressed_size,0);
   Free(buf);
 }
@@ -302,6 +303,7 @@ CGenericHeader *GetMessage(CMPConnect *con) {
   SlimProxReceive(con->sock,b1+1,b1->compressed_size-sizeof(CArcCompress),0);
   b2=ExpandBuf(b1);
   Free(b1); 
+PrintI(&b2->ident,b2->sz);
   return b2;
 }
 
@@ -582,7 +584,6 @@ U0 RecieveThings(CMPConnect *con,CDoomLevel *l,CThingsHeader *got) {
     dt->animation=FramePtr(st->anim_name,doom_task);
     dt->flags=dt->template->flags;
     dt->health=st->health;
-if(IsPlayer(dt)) PrintI("DOOM",dt);
     if(dt->health<=0.) {
       dt->flags&=~(TF_OBSTACLE|TF_SHOOTABLE);
     }
@@ -1084,7 +1085,6 @@ Bool ClientUpdateTask(CMPConnect *c) {
       if(dthing!=c->player) {
         RemovePosDataForThing(l,dthing);
 	r=Clamp((next_refresh-tS)/period,0,1);
-PrintF("r",r);
         dthing->x=Lerp(r,dthing->old_x,dthing->new_x);
         dthing->y=Lerp(r,dthing->old_y,dthing->new_y);
         dthing->height=Lerp(r,dthing->old_height,dthing->new_height);

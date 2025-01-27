@@ -3208,17 +3208,18 @@ Bool PlayerAttack(F64 shots_per_minute,F64 min_damage,F64 max_damage,F64 range,U
   p->angle=oa;
   return TRUE;
 }
+extern CDoomPlayer *GetClientPlayer();
 
 U0 UpdateLevel(CDoomLevel *l) {
   CDoomPlayer *p,*thead=&l->things;
   if(IsNetworkGameClient) {
     WorldLock;
-    for(p=thead->next;p!=thead;p=p->next)
+    if(p=GetClientPlayer) {
       if(IsPlayer(p)) {
         _CheckPowerupPickup(l,p);
         PhysicsOnThing(l,p);
       }
-
+    }
     WorldUnlock;
     return;
   }
@@ -3619,7 +3620,7 @@ ent:;
     DrawDoomWorld(&cam,l,doom_scrn);
 
     if(talk_active&&IsNetworkGameClient) {
-      ST_Start(p);
+      ST_Start(p);
       talk_active=MPTalk(doom_scrn,FramePtr("Client.Connect"));
       goto end_control;
     }

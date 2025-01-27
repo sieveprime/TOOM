@@ -138,7 +138,7 @@ U0 HostGame(I64 sock) {
   } else {
     PopUpOk("I can't find the first level!!!\n");
      throw('Wad');
-  }
+  }
   FramePtrAdd("SLIM_PROX",1);
   FramePtrAdd("SLIM_PROX_SOCK",sock);
   if(!data.just_serve) {
@@ -150,7 +150,7 @@ U0 HostGame(I64 sock) {
   }
 //See SlimProx.HC
   PrintI(" serce",1);
-  ServeGame(map ,4);
+  ServeGame(map ,4);
   Beep;
   close(sock);
 }

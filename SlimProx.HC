@@ -34,6 +34,8 @@ I64 ForceSend(I64 sock,U8 *buf,I64 len,U64 ul=0) {
     }
     buf+=sent;
     len-=sent;
+    if(len)
+      Yield;
   }
   return olen;
 }
@@ -47,6 +49,8 @@ I64 ForceRecv(I64 sock,U8 *buf,I64 len,U64 ul=0) {
     }
     buf+=got;
     len-=got;
+    if(len)
+      Yield;
   }
   return olen;
 }
@@ -79,7 +83,7 @@ U0 SlimProxTaskRead(CSlimProxSock *root_sock) {
   I64 cnt=0,got;
   U8 buf[0x20000],*ptr;
   while(TRUE) {
-    got=ForceRecv(root_sock->proxy,&hdr,sizeof(CSlimProxHeader),0);
+    got=ForceRecv(root_sock->proxy,&hdr,sizeof(CSlimProxHeader),0);
     if(sizeof(CSlimProxHeader)==got) {
       cnt=hdr.size;
       switch(hdr.ident) {
@@ -100,7 +104,7 @@ U0 SlimProxTaskRead(CSlimProxSock *root_sock) {
 	    who->write_fifo=FifoU8New(1<<20,Fs->parent_task);
 	    who->read_fifo=FifoU8New(1<<20,Fs->parent_task);
 	    I64SetAdd(root_sock->children,who);
-	  } else {
+	  } else {
 	    Free(who);
 	  }
 	}
