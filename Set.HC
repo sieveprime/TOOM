@@ -9,7 +9,7 @@ U0 I64SetDel(CI64Set *s) {
   Free(s);
 }
 CI64Set *I64SetNew() {
-  CI64Set *s=CAlloc(sizeof(CI64Set),doom_task);
+  CI64Set *s=CAlloc(sizeof(CI64Set),doom_task);
   s->cap=16;
   s->body=CAlloc(16*8,doom_task);
   return s;

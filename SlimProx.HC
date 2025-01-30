@@ -17,7 +17,7 @@
   } else if(a) {
     StreamPrint("#include \"CrossNetShims/Aiwnios2.HC\";;\n");
   } else if(e) {
-    StreamPrint("#include \"CrossNetShims/EXODUS.HC\";;\n");
+    StreamPrint("#include \"CrossNetShims/EXODUS.HC\";;\n");
   }
 };;
 #exe{
@@ -88,7 +88,7 @@ U0 SlimProxTaskRead(CSlimProxSock *root_sock) {
       cnt=hdr.size;
       switch(hdr.ident) {
 	case SLIM_PROX_DISCONNECT: {
- 	  if(hdr.who<root_sock->children->cnt) {
+	  if(hdr.who<root_sock->children->cnt) {
 	    who=root_sock->children->body[hdr.who];
 	    if(who) {
 	      who->closed=TRUE;
@@ -122,7 +122,7 @@ U0 SlimProxTaskRead(CSlimProxSock *root_sock) {
 	      ptr=buf;
 	      while(--got>=0) {
 	        while(!FifoU8Ins(who->read_fifo,*ptr))
-		  Sleep(3);
+		  Sleep(1);
 	        ++ptr;
 	      } 
 	    }
@@ -167,7 +167,7 @@ again:
 	}
       }
     }
-    Sleep(3);
+    Sleep(1);
   }
 }
 
@@ -175,7 +175,7 @@ I64 SlimProxDumbCreateConnection() {
 again:;
   CSlimProxSock *root_sock=FramePtr("DUMB_SLIM_PROX_ROOT",adam_task),*who;
   if(!root_sock) {
-    Sleep(3); 
+    Sleep(1); 
     goto again;
   }
   FramePtrAdd("SLIM_PROX",1);
@@ -236,21 +236,27 @@ U0 SlimProxServerReadTask(I64 sock) {
   I64 who=FramePtr("ToSock");
   I64 new,idx;
   I64 *avail=FramePtr("AvailSocks");
+  CArcCompress head,*load;
   CSlimProxHeader hdr;
-  I64 cnt;
-  U8 buf[0x20000];
   for(idx=0;idx!=0x10;idx++) 
     if(avail[idx]==sock)
       break;
-  while(0<=(cnt=recv(sock,buf,0x20000,0))) {
-    if(cnt>0) {
-      hdr.ident=SLIM_PROX_WRITE;
-      hdr.size=cnt;
-      hdr.who=idx;
-      ForceSend(who,&hdr,sizeof(CSlimProxHeader),0);
-      if(cnt) ForceSend(who,buf,cnt,0);
+  while(sizeof(CArcCompress)==ForceRecv(sock,&head,sizeof(CArcCompress),0)) {
+    if(head.compressed_size<1<<20) {
+      load=CAlloc(head.compressed_size);
+      MemCpy(load,&head,sizeof CArcCompress); 
+      if(0>ForceRecv(sock,load+1,head.compressed_size-sizeof(CArcCompress),0)) {
+        Free(load);
+        break;
+      }
     } else
-      Sleep(3);
+	break;
+    hdr.ident=SLIM_PROX_WRITE;
+    hdr.size=load->compressed_size;
+    hdr.who=idx;
+    ForceSend(who,&hdr,sizeof(CSlimProxHeader),0);
+    ForceSend(who,load,load->compressed_size,0);
+    Free(load);
   }
   hdr.ident=SLIM_PROX_DISCONNECT;
   hdr.size=0;
@@ -336,7 +342,7 @@ fail:;
       if(0<=hdr.who<0x10)
         avail_socks[hdr.who]=NULL;
     }
-    Sleep(3);
+    Sleep(1);
   }
   if(tmp=FramePtr("SLIM_PROX_EXIT_CB")) {
     ExePutS(tmp);
@@ -363,7 +369,7 @@ I64 SlimProxAccept(I64 sock,U8 *who,I64 ul) {
   if(sp->closed) return -1;
   while(!FifoI64Cnt(sp->accept_fifo)) {
     if(sp->closed) return -1;
-    Sleep(3);
+    Sleep(1);
   }
   FifoI64Rem(sp->accept_fifo,&ret);
   return ret;
@@ -385,7 +391,7 @@ I64 SlimProxReceive(I64 sock,U8 *buf,I64 len,I64 ul) {
     if(sp->closed) {
       return -1;
     }
-    Sleep(3);
+    Sleep(1);
   }
   U8 *o=buf;
   ate=len;
@@ -397,7 +403,7 @@ I64 SlimProxSend(I64 sock,U8 *buf,I64 len,I64 ul) {
   I64 sent;
   if(!FramePtr("SLIM_PROX")) {
     ForceSend(sock,buf,len);
-    return;
+    return len;
   }
   I64 ate=len;
   CSlimProxSock *sp=sock; 
@@ -417,7 +423,7 @@ I64 SlimProxSend(I64 sock,U8 *buf,I64 len,I64 ul) {
         LBtr(&sp->lock,1);
         return -1;
       }
-      Sleep(3);
+      Sleep(1);
     }
     buf++;
   }

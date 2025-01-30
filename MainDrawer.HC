@@ -674,6 +674,7 @@ Bool RayCastWall(CDC *to_dc,CDC *texture,CD2 *st,CD2 *en,CDoomCamera *cam,I64 le
 	      db_z[1]=idist+1;
 	      *to=SKY_PIXEL|SKY_PIXEL<<8;
 	    }
+
 	    ih2-=2;
 	  }
         }
@@ -1197,7 +1198,7 @@ I64 CeilSort(CVisplane *va,CVisplane *vb)  {
 
 U0 DrawSkyAndFillHoles(CDC *to_dc,CDoomLevel *l,CDoomCamera *cam) {
   CDC *texture;
-  I64 nm;
+  I64 nm,fill_color;
   if(FramePtr("DOOM2")) {
   StrScan(l->map_name,"MAP%d",&nm);
   if(nm<12)
@@ -1206,7 +1207,7 @@ U0 DrawSkyAndFillHoles(CDC *to_dc,CDoomLevel *l,CDoomCamera *cam) {
      texture=GetGrLump("RSKY2");
   else
      texture=GetGrLump("RSKY3");
-}else{
+ }else{
   switch(l->episode) {
    case 1:
      texture=GetGrLump("SKY1");
@@ -1232,7 +1233,10 @@ U0 DrawSkyAndFillHoles(CDC *to_dc,CDoomLevel *l,CDoomCamera *cam) {
       to=&to_dc->body[GR_WIDTH-2-ix+iy*to_dc->width_internal];
       if(*to&0xff!=SKY_PIXEL) {
 	if(iy&&*to&0xff==TRANSPARENT) {
+	  fill_color=(to(U8*)-to_dc->width_internal)[0](U16);
+	  *to=fill_color;
           to(U8*)+=to_dc->width_internal;
+	  *to=fill_color;
 	}
         goto skip;
       }
@@ -1310,7 +1314,7 @@ U0 DrawDoomWorld(CDoomCamera *cam,CDoomLevel *level,CDC *to_dc) {
     DCDepthBufAlloc(cam->floor_dc);
   }
   DCDepthBufRst(cam->floor_dc);
-  DCFill(doom_scrn);
+  DCFill(to_dc,SKY_PIXEL);
   DCFill(cam->floor_dc,BLACK);
   for(sector=level->sectors.next;sector!=&level->sectors;sector=sector->next)
     sector->drawn=FALSE;
@@ -3208,8 +3212,7 @@ Bool PlayerAttack(F64 shots_per_minute,F64 min_damage,F64 max_damage,F64 range,U
   p->angle=oa;
   return TRUE;
 }
-extern CDoomPlayer *GetClientPlayer();
-
+extern CDoomPlayer *GetClientPlayer();
 U0 UpdateLevel(CDoomLevel *l) {
   CDoomPlayer *p,*thead=&l->things;
   if(IsNetworkGameClient) {
@@ -3225,6 +3228,7 @@ U0 UpdateLevel(CDoomLevel *l) {
   }
   CDoomSector *sector,*head=&l->sectors;
   UpdateThinkers(l);
+  CheckPowerupPickup(l);
   Physics(l);
 fin:;
   for(p=thead->next;p!=thead;p=p->next) {
@@ -3246,7 +3250,6 @@ fin:;
     }
   }
 }
-
 U0 PressAWall(CDoomLevel *l,CD2 *where,F64 angle,F64 height) {
   CDoomPlayer *p;
 //Find a player

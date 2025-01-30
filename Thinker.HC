@@ -22,7 +22,7 @@ U0 UpdateThinkers(CDoomLevel *l) {
   Bool do_monster=FALSE;
   if(tS>next_monster) {
     do_monster=TRUE;
-    next_monster=tS+1/10.;
+    next_monster=tS+1/10.;
   }
   CDoomThinker *head=&l->thinkers,*cur,*next;
   for(cur=head->next;head!=cur;cur=next) {

@@ -26,7 +26,7 @@ U0 ScreenMelt(CDC *to,CDC *new,CDC *old) {
 	y2=y-offsets[i];
 	src=&old->body[old->width*y2+i*2];
         dst=&to->body[to->width*y+i*2];
-	*dst=*src;
+	*dst=*src;
         src(U8*)+=old->width;
         dst(U8*)+=to->width;
 	*dst=*src;

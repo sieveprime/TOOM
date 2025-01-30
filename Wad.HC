@@ -167,6 +167,7 @@ class CDoomThing:CQue {
   CDoomThingTemplate *template;
   I64 flags;
   I64 hash;
+  I64 server_id;
   Bool solid,anim_no_repeat,pad[6];
   U8 *thinker;
 };

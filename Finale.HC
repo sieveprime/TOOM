@@ -43,7 +43,7 @@
 "A hidden doorway opens and you enter.\n"\
 "You've proven too tough for Hell to\n"\
 "contain, and now Hell at last plays\n"\
-"fair -- for you emerge from the door\n"\
+	"fair -- for you emerge from the door\n"\
 "to see the green fields of Earth!\n"\
 "Home at last.\n" \
 "\n"\

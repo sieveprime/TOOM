@@ -130,7 +130,7 @@ done:
     return;
   }
 }
-U0 Sound(CMonsterThinker *t,U64 type) {
+U0 Sound(CMonsterThinker *t,U64 type) {
   if(type=='See')
     switch(t->self->template->type) {
       case 71: //Pain elemental

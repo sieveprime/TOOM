@@ -150,7 +150,7 @@ U0 HostGame(I64 sock) {
   }
 //See SlimProx.HC
   PrintI(" serce",1);
-  ServeGame(map ,4);
+  ServeGame(map ,4);
   Beep;
   close(sock);
 }
@@ -249,4 +249,5 @@ skip:
 }
 #if __CMD_LINE__
 ServerBrowser("aiwnios.com");
+//ServerBrowser("0.0.0.0");
 #endif

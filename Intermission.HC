@@ -350,6 +350,8 @@ U0 Intermission(CDoomLevel *lev,I64 ep,I64 l) {
     GrBlot(,0,0,doom_scrn);
     Refresh;
   }
-  if(!FramePtr("DOOM2"))
+  if(FramePtr("DOOM2"))
     Finale(doom_scrn,Str2I64(lev->map_name+3));
+  else
+    Finale(doom_scrn,Str2I64(lev->map_name+1));
 }

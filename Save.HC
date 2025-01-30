@@ -419,6 +419,7 @@ U0 LoadGame(U8 *filename) {
         state=1;
         for(idx=0;idx!=cnt;idx++) {
 	  thing=CAlloc(sizeof(CDoomPlayer),doom_task); //CDoomPlayer is the biggest one
+	  thing(CDoomPlayer*)->messages=FifoI64New(0x10,doom_task);
 	  QueIns(thing,l->things.last);
         }
         break;
