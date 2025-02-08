@@ -240,8 +240,8 @@ Bool ClipLineToScrenCoords(CDoomCamera *cam,CD2 *p,CD2 *p2,F64 level=0.,Bool *ou
   if(p->x*e.y>e.x*p->y)   
     if(p2->x*e.y>e.x*p2->y)   
       *out_of_view=TRUE;
-  if(p->x<0.)
-    if(p2->x<0.)
+  if(p->x<0.01)
+    if(p2->x<0.01)
       *out_of_view=TRUE;
   e.y=-e.y;
 
@@ -338,12 +338,20 @@ CD4 *GetFlatPoints(CDoomCamera *cam,CDoomSector *s,F64 level,I64 *cnt) {
     ret[idx2].start.x=ret[idx2].start.x;
     ret[idx2].end.x=ret[idx2].end.x;
 
-    if(ret[idx2].start.x>=ret[idx2].end.x) {
+    if(ret[idx2].start.x>ret[idx2].end.x) {
       SwapI64(&ret[idx2].start.x,&ret[idx2].end.x);
+    }
+    if(ret[idx2].start.y>ret[idx2].end.y) {
       SwapI64(&ret[idx2].start.y,&ret[idx2].end.y);
     }
-    if(!out_of_view)
-	idx2++;
+    if(!out_of_view) {
+      idx2++;
+    } else  {
+//Cap the the top/bottom of screen if ceiling or floor.
+      ret[idx2].start.y=0;
+      ret[idx2].end.y=GR_HEIGHT;
+      idx2++;
+    }
   }
   if(cnt) *cnt=idx2;
   return ret;
@@ -377,11 +385,10 @@ U0 FillPoly(CDC *dc,CDoomCamera *cam,CDoomSector *s,CDC *texture,CD4 *points,I64
   Bool god_mode=GodModeFilter;
   I64 idx,idx2,idx3;
   I64 af=Server_tS*4;
-  CI64Set *lines=I64SetNew();
-  I64 minx,x,miny;
+  I64 minx,x,y,miny,maxy;
   I64 maxx,cap;
   CD3 dummya,dummyb;
-  F64 slope,wxf,wyf,midx,y,slope2,angle,dist;
+  F64 slope,wxf,wyf,midx,slope2,angle,dist;
   I64 scrn_points[0x100],wall_skip;
   CLine64 ln,to_remove,ln2;
   static F64 last_angle=I16_MAX; //Not possible to start with this angle
@@ -397,80 +404,49 @@ U0 FillPoly(CDC *dc,CDoomCamera *cam,CDoomSector *s,CDC *texture,CD4 *points,I64
   }
   ln.sx=points[0].start.x;
   ln.ex=ln.sx;
-  if(!floor)
-    ln.sy=0,ln.ey=0;
-  else 
-    ln.sy=GR_HEIGHT,ln.ey=GR_HEIGHT;
+  ln.sy=points[0].start.y;
+  ln.ey=ln.sy;
   for(idx=0;idx!=cnt;idx++) {
     ln.sx=MinI64(points[idx].start.x,ln.sx);
     ln.ex=MaxI64(points[idx].end.x,ln.ex);
+    ln.sy=MinI64(points[idx].start.y,ln.sy);
+    ln.ey=MaxI64(points[idx].end.y,ln.ey);
   }
   minx=ClampI64(ln.sx,0,GR_WIDTH-2);
   maxx=ClampI64(ln.ex,0,GR_WIDTH-2);
-
-  I64SetAdd(lines,ln);
-
-  for(idx=0;idx!=cnt;idx++) {
-    ln.sx=points[idx].start.x;
-    ln.sy=points[idx].start.y;
-    ln.ex=points[idx].end.x;
-    ln.ey=points[idx].end.y;
-    I64SetAdd(lines,ln);
-  }
+  miny=ClampI64(ln.sy,0,GR_WIDTH-2);
+  maxy=ClampI64(ln.ey,0,GR_WIDTH-2);
 
   minx=minx&~1; //Avoids Templeos bug with &=~1;
+  miny=miny&~1;
+
+  if(maxx&1) maxx++;
+  if(maxy&1) maxy++;
 
   minx=ClampI64(minx,GR_WIDTH/mp_cnt*Gs->num+2,GR_WIDTH/mp_cnt*(Gs->num+1)-2);
   maxx=ClampI64(maxx,GR_WIDTH/mp_cnt*Gs->num+2,GR_WIDTH/mp_cnt*(Gs->num+1)-2);
 
   for(x=minx-2;x<maxx+2;x+=2) {
-    idx3=0;
-    for(idx2=0;idx2!=lines->cnt;idx2++) {
-      ln=lines->body[idx2];
-      if(!(ln.sx<=x<=ln.ex))
-        goto skip;
-      slope=ToF64(ln.ey-ln.sy)/ToF64(ln.ex-ln.sx);
-      scrn_points[idx3++]=(x-ln.sx)*slope+ln.sy;
-skip:;
+    if(floor) {
+      cap=ClampI64(miny-4,GR_HEIGHT/2,GR_HEIGHT-2);
+      y=ClampI64(maxy+4,GR_HEIGHT/2,GR_HEIGHT-2);
+    } else {
+      cap=ClampI64(maxy+4,0,GR_HEIGHT/2);
+      y=ClampI64(miny-4,0,GR_HEIGHT/2);;
     }
-    if(idx3)
-      QSortI64(&scrn_points,idx3,&I64Sort);
-    for(idx2=0;idx2<idx3-1;idx2++) {
-      dummya.x=x;
-      dummyb.x=x;
-      dummya.y=scrn_points[idx2];
-      dummyb.y=scrn_points[idx2+1];
-
-      dist=DIST_SCALE/(ToF64((dummya.y+dummyb.y)/2-GR_HEIGHT/2)/(cam->h-level));
+    for(;y!=cap;y+=Sign(cap-y)*2) {
+      dist=DIST_SCALE/(ToF64(y-GR_HEIGHT/2)/(cam->h-level));
       dist/=ray_cast_table_cos[ToI64(x)>>1];
+      if(dist>5+cam->cutoff_dists[ToI64(x)>>1]) {
+	break;
+      }
       wyf=cam->y+dist*sin_table[ToI64(x)];
       wxf=cam->x+dist*cos_table[ToI64(x)];
-
-      if(s=GetSectorForCoord(l,wxf,wyf)) {
-        if((floor&&s->floor_height==level)||(!floor&&s->ceil_height==level)) {
-	  y=MinI64(dummya.y,dummyb.y);
-	  cap=MaxI64(dummya.y,dummyb.y);
-	  y=ToI64(y)&~1;
-	  cap=ToI64(cap)&~1;
-	  y=ClampI64(y-4,0,GR_HEIGHT-2);
-	  cap=ClampI64(cap+4,0,GR_HEIGHT-2);
-	  if(floor) {
-	    y=MaxI64(GR_HEIGHT/2,y);
-	    cap=MaxI64(GR_HEIGHT/2,cap);
-	  } else {
-	    y=MinI64(GR_HEIGHT/2,y);
-	    cap=MinI64(GR_HEIGHT/2,cap);
-	  }
-	  for(;y<=cap;y+=2) {
-	    dist=DIST_SCALE/(ToF64(y-GR_HEIGHT/2)/(cam->h-level));
-            dist/=ray_cast_table_cos[ToI64(x)>>1];
-            wyf=cam->y+dist*sin_table[ToI64(x)];
-            wxf=cam->x+dist*cos_table[ToI64(x)];
-	    s=GetSectorForCoord(l,wxf,wyf);
-	    if(dist>0.01) {
-	    if(floor) {
-	      texture=s->floor_dc[af%FrameCnt(s->floor_dc)];
-	      if(s->floor_height==level) {
+      s=GetSectorForCoord(l,wxf,wyf);
+      if(s&&dist>0.01) {
+        if(floor) {
+	  if(texture==s->floor_dc[af%FrameCnt(s->floor_dc)])
+	    if(s->floor_height==level) {
 pass:;
 	      SectorPlot(dc,texture,x,y,
 		  dist,
@@ -478,20 +454,16 @@ pass:;
 		  wyf,
 		  s->cur_light_level,
 		  god_mode);
-	      }
-	    } else if(!floor) {
-	      texture=s->ceil_dc[af%FrameCnt(s->ceil_dc)];
-	      if(s->ceil_height==level)
-		goto pass;
 	    }
-	   }
-	  }
+        } else if(!floor) {
+	  if(texture==s->ceil_dc[af%FrameCnt(s->ceil_dc)])
+	    if(s->ceil_height==level)
+	      goto pass;
         }
       }
 next:;
     }
   }
-  I64SetDel(lines);
 }
 
 U0 PopulateTables() {

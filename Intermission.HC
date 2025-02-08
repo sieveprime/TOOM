@@ -277,7 +277,7 @@ U0 Intermission(CDoomLevel *lev,I64 ep,I64 l) {
 #ifdef __AIWNIOS__
   AIWNIOS_SetCaptureMouse(0);
 #endif
-  if(FramePtr("DOOM2"))
+  if(!FramePtr("DOOM2"))
     IntermessionLoadData(ep,l);
   F64 start_ts=tS;
   FlushMsgs;
