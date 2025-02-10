@@ -47,7 +47,30 @@ CWad *LoadWad(U8 *filename) {
 
   return ret;
 }
-
+Bool IsIWad(U8 *filename) {
+  CWad *data=FileRead(filename);
+  if(!data)
+    return FALSE;
+  Bool ret=FALSE;
+  if(data) {
+    if(data->ident[0]=='I')
+      ret=TRUE;
+  }
+  Free(data);
+  return ret;
+}
+Bool IsPWad(U8 *filename) {
+  CWad *data=FileRead(filename);
+  Bool ret=FALSE;
+  if(!data)
+    return FALSE;
+  if(data) {
+    if(data->ident[0]=='P')
+      ret=TRUE;
+  }
+  Free(data);
+  return ret;
+}
 #include "ModMan.HC";
 
 
